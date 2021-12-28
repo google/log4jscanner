@@ -70,6 +70,11 @@ func autoMitigateJAR(path string) error {
 	if err := Rewrite(f, &r.Reader); err != nil {
 		return fmt.Errorf("rewriting zip: %v", err)
 	}
+
+	// Files must be closed before rename works on Windows.
+	r.Close()
+	f.Close()
+
 	if err := os.Rename(f.Name(), path); err != nil {
 		return fmt.Errorf("renaming file: %v", err)
 	}
@@ -185,10 +190,12 @@ func TestAutoMitigateJAR(t *testing.T) {
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", src, err)
 			}
+			defer before.Close()
 			after, err := zip.OpenReader(dest)
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", dest, err)
 			}
+			defer after.Close()
 			checkJARs(t, func(name string) bool {
 				return path.Base(name) == "JndiLookup.class"
 			}, &before.Reader, &after.Reader)
@@ -217,10 +224,12 @@ func TestAutoMitigateSignedJAR(t *testing.T) {
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", src, err)
 			}
+			defer before.Close()
 			after, err := zip.OpenReader(dest)
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", dest, err)
 			}
+			defer after.Close()
 			checkJARs(t, func(name string) bool {
 				return name == "JndiLookup.class" ||
 					name == "SERVER.SF" ||
