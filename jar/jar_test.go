@@ -20,7 +20,7 @@ import (
 	"testing"
 )
 
-func testdataPath(p string) string {
+var testdataPath = func(p string) string {
 	return filepath.Join("testdata", p)
 }
 
