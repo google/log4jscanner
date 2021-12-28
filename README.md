@@ -36,6 +36,21 @@ $ zipinfo /tmp/vuln-class.jar | grep Jndi
 -rw-r--r--  3.0 unx     1939 bx defN 20-Nov-06 14:03 net/JndiManager$JndiManagerFactory.class
 ```
 
+On MacOS, you can scan the entire data directory with:
+
+```
+$ sudo log4jscanner /System/Volumes/Data
+```
+
+The scanner can also skip directories by passing glob patterns. On Linux, you
+may choose to scan the entire root filesystem, but skip site-specific paths
+(e.g. the `/data/*` directory). By default log4jscanner will not scan magic
+filesystems, such as /proc and /sys.
+
+```
+$ sudo log4jscanner --skip '/data/*' /
+```
+
 For heavy customization, such as reporting to external endpoints, much of the
 tool's logic is exposed throught the [`jar.Walker`][jar-walker] API.
 

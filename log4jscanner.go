@@ -35,6 +35,8 @@ to stdout.
 
 Flags:
 
+    -s, --skip     Glob pattern to skip when scanning (e.g. '/var/run/*'). May
+                   be provided multiple times.
     -w, --rewrite  Rewrite vulnerable JARs as they are detected.
     -v, --verbose  Print verbose logs to stderr.
 
@@ -55,11 +57,19 @@ func main() {
 		w       bool
 		verbose bool
 		v       bool
+		toSkip  []string
 	)
+	appendSkip := func(dir string) error {
+		toSkip = append(toSkip, dir)
+		return nil
+	}
+
 	flag.BoolVar(&rewrite, "rewrite", false, "")
 	flag.BoolVar(&w, "w", false, "")
 	flag.BoolVar(&verbose, "verbose", false, "")
 	flag.BoolVar(&v, "v", false, "")
+	flag.Func("s", "", appendSkip)
+	flag.Func("skip", "", appendSkip)
 	flag.Usage = usage
 	flag.Parse()
 	dirs := flag.Args()
@@ -91,10 +101,19 @@ func main() {
 			if !d.IsDir() {
 				return false
 			}
+			for _, pattern := range toSkip {
+				if ok, err := filepath.Match(pattern, path); err == nil && ok {
+					return true
+				}
+			}
 			if skipDirs[filepath.Base(path)] {
 				return true
 			}
-			return false
+			ignore, err := ignoreDir(path)
+			if err != nil {
+				log.Printf("Error scanning %s: %v", path, err)
+			}
+			return ignore
 		},
 		HandleError: func(path string, err error) {
 			log.Printf("Error: scanning %s: %v", path, err)
