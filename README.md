@@ -6,6 +6,8 @@ A log4j vulnerability filesystem scanner and Go package for analyzing JAR files.
 
 ## Installing
 
+Pre-compiled binaries are available as [releases assets][releases].
+
 To install from source with an existing [Go][go] installation, either use
 [go install][go-install]:
 
@@ -23,6 +25,7 @@ go build -o log4jscanner
 
 [go]: https://go.dev/
 [go-install]: https://pkg.go.dev/cmd/go#hdr-Compile_and_install_packages_and_dependencies
+[releases]: https://github.com/google/log4jscanner/releases
 
 ## Command line tool
 
