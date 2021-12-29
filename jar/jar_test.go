@@ -44,6 +44,10 @@ func TestParse(t *testing.T) {
 		{"log4j-core-2.1.jar.patched", false},
 		{"safe1.jar", false},
 		{"safe1.signed.jar", false},
+		// Archive contains a malformed directory that causes archive/zip to
+		// return an error.
+		// See https://go.dev/issues/50390
+		{"selenium-api-3.141.59.jar", false},
 		// Test case where it contains a JndiLookupOther.class file that shouldn't be detected as vulnerable
 		{"similarbutnotvuln.jar", false},
 		{"vuln-class.jar", true},
@@ -68,7 +72,7 @@ func TestParse(t *testing.T) {
 			defer zr.Close()
 			report, err := Parse(zr)
 			if err != nil {
-				t.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
+				t.Fatalf("Scan() returned an unexpected error, got %v, want nil", err)
 			}
 			got := report.Vulnerable
 			if tc.wantBad != got {
