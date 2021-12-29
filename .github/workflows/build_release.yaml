@@ -1,0 +1,26 @@
+on:
+  release:
+    types: [created]
+name: Release Binaries
+jobs:
+  generate:
+    name: Create release-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout the repository
+        uses: actions/checkout@master
+
+      - name: Generate Binaries
+        run: |
+          CGO_ENABLED=0 GOOS=linux go build -o bin/log4jscanner && \
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=6 go build -o bin/log4jscanner-armhf && \
+          CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -o bin/log4jscanner-arm64 && \
+          CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 -o bin/log4jscanner-darwing-arm64 && \
+          CGO_ENABLED=0 GOOS=darwin go build -o bin/log4jscanner-darwin && \
+          CGO_ENABLED=0 GOOS=windows go build -o bin/log4jscanner.exe && \
+      - name: Upload the artifacts
+        uses: skx/github-action-publish-binaries@master
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          args: 'bin/*'
