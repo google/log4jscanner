@@ -1,0 +1,25 @@
+name: release
+on:
+  release:
+    types: [created]
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+    - name: Install Go
+      uses: actions/setup-go@v2
+      with:
+        go-version: 1.17.x
+    - name: Checkout code
+      uses: actions/checkout@v2
+    - name: Build Release
+      run: ./scripts/build-release.sh
+    - name: Update Dependencies
+      run: sudo apt-get update
+    - name: Install Dependencies
+      run: sudo apt-get install -y jq
+    - name: Upload
+      run: ./scripts/release.sh ./bin
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
