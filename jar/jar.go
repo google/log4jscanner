@@ -19,6 +19,7 @@ import (
 	"archive/zip"
 	"bufio"
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -125,6 +126,11 @@ func (c *checker) checkJAR(r fs.FS, depth int, size int64) error {
 
 	err := fs.WalkDir(r, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
+			// Workaround for http://go.dev/issues/50390.
+			var perr *fs.PathError
+			if errors.As(err, &perr) && d.IsDir() && !strings.HasSuffix(p, "/") && perr.Op == "readdir" {
+				return nil
+			}
 			return err
 		}
 		if c.done() {
