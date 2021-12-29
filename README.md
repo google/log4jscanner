@@ -4,6 +4,37 @@
 
 A log4j vulnerability filesystem scanner and Go package for analyzing JAR files.
 
+## Installation
+As of right now you have the following two options to install log4jscanner:
+
+### Go Install
+This requires Go to be installed on your system. You can find instruction how to
+install Go in the [Go documentation](https://go.dev/doc/install).
+
+Once Go is installed, you can use the following command to install log4jscanner:
+
+```
+go install github.com/google/log4jscanner@latest
+```
+
+### Build from source
+You can build the binary from source. This also requires Go to be installed as
+a precondition. You can find instruction how to install Go in the
+[Go documentation](https://go.dev/doc/install).
+
+Once Go is installed, you can use the following commands to build log4jscanner
+from source:
+
+```
+git clone git@github.com:google/log4jscanner.git
+cd log4jscanner
+go build -o log4jscanner
+```
+
+The above command will produce a binary in the current directory. You can then
+refer to [the Command Line Tool section](#command-line-tool) for information on
+how to use log4jscanner.
+
 ## Command line tool
 
 This project includes a scanner that walks directory, printing any detected JARs
