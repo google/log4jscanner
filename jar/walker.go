@@ -168,15 +168,24 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 		return nil
 	}
 
-	tf, err := os.CreateTemp("", "")
+	dest := w.filepath(p)
+	// Ensure temp file is created in the same directory as the file we want to
+	// rewrite to improve the chances of ending up on the same filesystem. On
+	// Linux, os.Rename() doesn't work across filesystems.
+	//
+	// https://github.com/google/log4jscanner/issues/18
+	tf, err := os.CreateTemp(filepath.Dir(dest), ".log4jscanner")
 	if err != nil {
 		return fmt.Errorf("creating temp file: %v", err)
 	}
+	defer os.Remove(tf.Name()) // Attempt to clean up temp file no matter what.
 	defer tf.Close()
 
 	if err := RewriteJAR(tf, ra, info.Size()); err != nil {
 		return fmt.Errorf("failed to rewrite %s: %v", p, err)
 	}
+
+	// Files must be closed for rewrite to work on Windows.
 	f.Close()
 	tf.Close()
 	if err := os.Chmod(tf.Name(), info.Mode()); err != nil {
@@ -192,7 +201,7 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 			return fmt.Errorf("changing ownership of temporary file: %v", err)
 		}
 	}
-	if err := os.Rename(tf.Name(), w.filepath(p)); err != nil {
+	if err := os.Rename(tf.Name(), dest); err != nil {
 		return fmt.Errorf("overwriting %s: %v", p, err)
 	}
 	w.handleRewrite(p, r)
