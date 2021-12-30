@@ -23,8 +23,11 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"os"
 	"path"
 	"strings"
+
+	zipfork "github.com/google/log4jscanner/third_party/zip"
 )
 
 const (
@@ -66,6 +69,72 @@ func Parse(r *zip.Reader) (*Report, error) {
 		MainClass:  c.mainClass,
 		Version:    c.version,
 	}, nil
+}
+
+// ReadCloser mirrors zip.ReadCloser.
+type ReadCloser struct {
+	zip.Reader
+
+	f *os.File
+}
+
+// Close closes the underlying file.
+func (r *ReadCloser) Close() error {
+	return r.f.Close()
+}
+
+// OpenReader mirrors zip.OpenReader, loading a JAR from a file, but supports
+// self-executable JARs. See NewReader() for details.
+func OpenReader(path string) (r *ReadCloser, offset int64, err error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	info, err := f.Stat()
+	if err != nil {
+		f.Close()
+		return
+	}
+	zr, offset, err := NewReader(f, info.Size())
+	if err != nil {
+		f.Close()
+		return
+	}
+	return &ReadCloser{*zr, f}, offset, nil
+}
+
+// offsetReader is a io.ReaderAt that starts at some offset from the start of
+// the file.
+type offsetReader struct {
+	ra     io.ReaderAt
+	offset int64
+}
+
+func (o offsetReader) ReadAt(p []byte, off int64) (n int, err error) {
+	return o.ra.ReadAt(p, off+o.offset)
+}
+
+// NewReader is a wrapper around zip.NewReader that supports self-executable
+// JARs. JAR files with prefixed data, such as a bash script to allow them to
+// run directly.
+//
+// If the ZIP contains a prefix, the returned offset indicates the size of the
+// prefix.
+//
+// See:
+// - https://kevinboone.me/execjava.html
+// - https://github.com/golang/go/issues/10464
+func NewReader(ra io.ReaderAt, size int64) (zr *zip.Reader, offset int64, err error) {
+	zr, err = zip.NewReader(ra, size)
+	if err == nil || !errors.Is(err, zip.ErrFormat) {
+		return zr, 0, err
+	}
+	offset, err = zipfork.ReadZIPOffset(ra, size)
+	if err != nil {
+		return nil, 0, err
+	}
+	zr, err = zip.NewReader(offsetReader{ra, offset}, size-offset)
+	return zr, offset, err
 }
 
 type checker struct {

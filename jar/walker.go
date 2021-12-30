@@ -143,7 +143,7 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 	if !ok {
 		return fmt.Errorf("file doesn't implement reader at: %T", f)
 	}
-	zr, err := zip.NewReader(ra, info.Size())
+	zr, _, err := NewReader(ra, info.Size())
 	if err != nil {
 		if err == zip.ErrFormat {
 			// Not a JAR.
@@ -174,7 +174,7 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 	}
 	defer tf.Close()
 
-	if err := Rewrite(tf, zr); err != nil {
+	if err := RewriteJAR(tf, ra, info.Size()); err != nil {
 		return fmt.Errorf("failed to rewrite %s: %v", p, err)
 	}
 	f.Close()
