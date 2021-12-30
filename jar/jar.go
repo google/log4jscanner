@@ -56,9 +56,9 @@ type Report struct {
 
 // Parse traverses a JAR file, attempting to detect any usages of vulnerable
 // log4j versions.
-func Parse(r fs.FS) (*Report, error) {
+func Parse(r *zip.Reader) (*Report, error) {
 	var c checker
-	if err := c.checkJAR(&zipFS{r}, 0, 0); err != nil {
+	if err := c.checkJAR(r, 0, 0); err != nil {
 		return nil, fmt.Errorf("failed to check JAR: %v", err)
 	}
 	return &Report{
@@ -66,35 +66,6 @@ func Parse(r fs.FS) (*Report, error) {
 		MainClass:  c.mainClass,
 		Version:    c.version,
 	}, nil
-}
-
-// zipFS exists because of bugs hit in encoding/zip that causes reading "."
-// to return "." as one of the entries. This in turn, makes fs.WalkDir()
-// recurse infinitely.
-//
-// See: https://go.dev/issue/50179
-type zipFS struct {
-	fs.FS
-}
-
-// ReadDir overrides the buggy zip.Reader behavior and removes any DirEntry
-// values that match the provided name.
-func (z *zipFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	entries, err := fs.ReadDir(z.FS, name)
-	if err != nil {
-		return nil, err
-	}
-
-	j := 0
-	for i := 0; i < len(entries); i++ {
-		if entries[i].Name() == name {
-			continue
-		}
-		entries[j] = entries[i]
-		j++
-	}
-	entries = entries[:j]
-	return entries, nil
 }
 
 type checker struct {
@@ -119,20 +90,26 @@ func (c *checker) bad() bool {
 	return (c.hasLookupClass && c.hasOldJndiManagerConstructor) || (c.hasLookupClass && c.seenJndiManagerClass && !c.isAtLeastTwoDotSixteen)
 }
 
-func (c *checker) checkJAR(r fs.FS, depth int, size int64) error {
-	if depth > maxZipDepth {
-		return fmt.Errorf("reached max zip depth of %d", maxZipDepth)
-	}
-
-	err := fs.WalkDir(r, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil {
-			// Workaround for http://go.dev/issues/50390.
-			var perr *fs.PathError
-			if errors.As(err, &perr) && d.IsDir() && !strings.HasSuffix(p, "/") && perr.Op == "readdir" {
+func walkZIP(r *zip.Reader, fn func(f *zip.File) error) error {
+	for _, f := range r.File {
+		if err := fn(f); err != nil {
+			if errors.Is(err, fs.SkipDir) {
 				return nil
 			}
 			return err
 		}
+	}
+	return nil
+}
+
+func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
+	if depth > maxZipDepth {
+		return fmt.Errorf("reached max zip depth of %d", maxZipDepth)
+	}
+
+	err := walkZIP(r, func(zf *zip.File) error {
+		d := fs.FileInfoToDirEntry(zf.FileInfo())
+		p := zf.Name
 		if c.done() {
 			if d.IsDir() {
 				return fs.SkipDir
@@ -151,16 +128,13 @@ func (c *checker) checkJAR(r fs.FS, depth int, size int64) error {
 				return nil
 			}
 
-			f, err := r.Open(p)
+			f, err := zf.Open()
 			if err != nil {
 				return fmt.Errorf("opening file %s: %v", p, err)
 			}
 			defer f.Close()
 
-			info, err := f.Stat()
-			if err != nil {
-				return fmt.Errorf("stat file %s: %v", p, err)
-			}
+			info := zf.FileInfo()
 			var r io.Reader = f
 			if fsize := info.Size(); fsize > 0 {
 				if fsize+size > maxZipSize {
@@ -188,7 +162,7 @@ func (c *checker) checkJAR(r fs.FS, depth int, size int64) error {
 			return nil
 		}
 		if p == "META-INF/MANIFEST.MF" {
-			mf, err := r.Open(p)
+			mf, err := zf.Open()
 			if err != nil {
 				return fmt.Errorf("opening manifest file %s: %v", p, err)
 			}
@@ -232,7 +206,7 @@ func (c *checker) checkJAR(r fs.FS, depth int, size int64) error {
 		if size+fi.Size() > maxZipSize {
 			return fmt.Errorf("archive inside archive at %q is greater than 4GB, skipping", p)
 		}
-		f, err := r.Open(p)
+		f, err := zf.Open()
 		if err != nil {
 			return fmt.Errorf("open file %s: %v", p, err)
 		}
@@ -250,7 +224,7 @@ func (c *checker) checkJAR(r fs.FS, depth int, size int64) error {
 			}
 			return fmt.Errorf("parsing file %s: %v", p, err)
 		}
-		if err := c.checkJAR(&zipFS{r2}, depth+1, size+fi.Size()); err != nil {
+		if err := c.checkJAR(r2, depth+1, size+fi.Size()); err != nil {
 			return fmt.Errorf("checking sub jar %s: %v", p, err)
 		}
 		return nil

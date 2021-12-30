@@ -70,7 +70,7 @@ func TestParse(t *testing.T) {
 				t.Fatalf("zip.OpenReader failed: %v", err)
 			}
 			defer zr.Close()
-			report, err := Parse(zr)
+			report, err := Parse(&zr.Reader)
 			if err != nil {
 				t.Fatalf("Scan() returned an unexpected error, got %v, want nil", err)
 			}
@@ -92,7 +92,7 @@ func BenchmarkParse(b *testing.B) {
 	defer zr.Close()
 	b.ReportAllocs()
 	for i := 0; i < b.N; i++ {
-		_, err := Parse(zr)
+		_, err := Parse(&zr.Reader)
 		if err != nil {
 			b.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
 		}
