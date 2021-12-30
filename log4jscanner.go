@@ -47,6 +47,7 @@ var skipDirs = map[string]bool{
 	".hg":          true,
 	".git":         true,
 	"node_modules": true,
+	".idea":        true,
 
 	// TODO(ericchiang): expand
 }
