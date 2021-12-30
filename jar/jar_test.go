@@ -15,7 +15,6 @@
 package jar
 
 import (
-	"archive/zip"
 	"path/filepath"
 	"testing"
 )
@@ -51,6 +50,7 @@ func TestParse(t *testing.T) {
 		// Test case where it contains a JndiLookupOther.class file that shouldn't be detected as vulnerable
 		{"similarbutnotvuln.jar", false},
 		{"vuln-class.jar", true},
+		{"vuln-class-executable", true},
 		{"vuln-class.jar.patched", false},
 		{"good_jar_in_jar.jar", false},
 		{"good_jar_in_jar_in_jar.jar", false},
@@ -61,11 +61,14 @@ func TestParse(t *testing.T) {
 		{"bad_jar_with_invalid_jar.jar", true},
 		{"bad_jar_with_invalid_jar.jar.patched", false},
 		{"good_jar_with_invalid_jar.jar", false},
+		{"helloworld-executable", false},
+		{"helloworld.jar", false},
+		{"helloworld.signed.jar", false},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.filename, func(t *testing.T) {
 			p := testdataPath(tc.filename)
-			zr, err := zip.OpenReader(p)
+			zr, _, err := OpenReader(p)
 			if err != nil {
 				t.Fatalf("zip.OpenReader failed: %v", err)
 			}
@@ -85,7 +88,7 @@ func TestParse(t *testing.T) {
 func BenchmarkParse(b *testing.B) {
 	filename := "safe1.jar"
 	p := testdataPath(filename)
-	zr, err := zip.OpenReader(p)
+	zr, _, err := OpenReader(p)
 	if err != nil {
 		b.Fatalf("zip.OpenReader failed: %v", err)
 	}

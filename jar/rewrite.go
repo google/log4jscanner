@@ -33,7 +33,50 @@ var skipSuffixes = [...]string{
 	".SF",
 }
 
+// RewriteJAR is like Rewrite but accounts for self-executable JARs, copying
+// any prefixed data that may be included in the JAR.
+func RewriteJAR(dest io.Writer, src io.ReaderAt, size int64) error {
+	zr, offset, err := NewReader(src, size)
+	if err != nil {
+		return err
+	}
+
+	if offset > 0 {
+		src := io.NewSectionReader(src, 0, offset)
+		if _, err := io.CopyN(dest, src, offset); err != nil {
+			return err
+		}
+	}
+	return Rewrite(dest, zr)
+}
+
 // Rewrite attempts to remove any JndiLookup.class files from a JAR.
+//
+// Rewrite does not account for self-executable JARs and does not preserve the
+// file prefix. This must be explicitly handled, or use RewriteJAR() to do so
+// automatically.
+//
+//		zr, offset, err := jar.NewReader(ra, size)
+//		if err != nil {
+//			// ...
+//		}
+//		dest, err := os.CreateTemp("", "")
+//		if err != nil {
+//			// ...
+//		}
+//		defer dest.Close()
+//
+//		if offset > 0 {
+//			// Rewrite prefix.
+//			src := io.NewSectionReader(ra, 0, offset)
+//			if _, err := io.CopyN(dest, src, offset); err != nil {
+//				// ...
+//			}
+//		}
+//		if err := jar.Rewrite(dest, zr); err != nil {
+//			// ...
+//		}
+//
 func Rewrite(w io.Writer, zr *zip.Reader) error {
 	zw := zip.NewWriter(w)
 	for _, zipItem := range zr.File {

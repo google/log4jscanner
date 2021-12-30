@@ -57,17 +57,22 @@ func cpFile(t *testing.T, dest, src string) {
 }
 
 func autoMitigateJAR(path string) error {
-	r, err := zip.OpenReader(path)
+	r, err := os.Open(path)
 	if err != nil {
-		return fmt.Errorf("open reader: %v", err)
+		return fmt.Errorf("open flie: %v", err)
 	}
 	defer r.Close()
+	info, err := r.Stat()
+	if err != nil {
+		return fmt.Errorf("stat file: %v", err)
+	}
+
 	f, err := os.CreateTemp("", "")
 	if err != nil {
 		return fmt.Errorf("create temp: %v", err)
 	}
 	defer f.Close()
-	if err := Rewrite(f, &r.Reader); err != nil {
+	if err := RewriteJAR(f, r, info.Size()); err != nil {
 		return fmt.Errorf("rewriting zip: %v", err)
 	}
 
@@ -173,6 +178,7 @@ func TestAutoMitigateJAR(t *testing.T) {
 		"bad_jar_in_jar_in_jar.jar",
 		"bad_jar_with_invalid_jar.jar",
 		"vuln-class.jar",
+		"vuln-class-executable",
 	} {
 		tc := tc
 		t.Run(tc, func(t *testing.T) {
@@ -186,12 +192,105 @@ func TestAutoMitigateJAR(t *testing.T) {
 				t.Fatalf("autoMitigateJar(%s) failed: %v", dest, err)
 			}
 
-			before, err := zip.OpenReader(src)
+			before, _, err := OpenReader(src)
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", src, err)
 			}
 			defer before.Close()
-			after, err := zip.OpenReader(dest)
+			after, _, err := OpenReader(dest)
+			if err != nil {
+				t.Fatalf("zip.OpenReader(%q) failed: %v", dest, err)
+			}
+			defer after.Close()
+			checkJARs(t, func(name string) bool {
+				return path.Base(name) == "JndiLookup.class"
+			}, &before.Reader, &after.Reader)
+		})
+	}
+}
+
+func TestAutoMitigateExecutable(t *testing.T) {
+	for _, tc := range []string{
+		"helloworld-executable",
+		"vuln-class-executable",
+	} {
+		tc := tc
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			src := testdataPath(tc)
+			dest := filepath.Join(t.TempDir(), tc)
+
+			cpFile(t, dest, src)
+
+			if err := autoMitigateJAR(dest); err != nil {
+				t.Fatalf("autoMitigateJar(%s) failed: %v", dest, err)
+			}
+
+			sf, err := os.Open(src)
+			if err != nil {
+				t.Fatalf("open file %s: %v", src, err)
+			}
+			defer sf.Close()
+			info, err := sf.Stat()
+			if err != nil {
+				t.Fatalf("stat file %s: %v", src, err)
+			}
+
+			_, offset, err := NewReader(sf, info.Size())
+			if err != nil {
+				t.Fatalf("new jar reader %s: %v", src, err)
+			}
+			if offset <= 0 {
+				t.Errorf("expected offset for executable %s: got=%d", src, offset)
+			}
+
+			df, err := os.Open(dest)
+			if err != nil {
+				t.Fatalf("open file %s: %v", dest, err)
+			}
+			defer df.Close()
+
+			got := make([]byte, offset)
+			want := make([]byte, offset)
+			if _, err := io.ReadFull(sf, want); err != nil {
+				t.Fatalf("reading prefix from file %s: %v", src, err)
+			}
+			if _, err := io.ReadFull(df, got); err != nil {
+				t.Fatalf("reading prefix from file %s: %v", dest, err)
+			}
+			if !bytes.Equal(got, want) {
+				t.Errorf("prefix did not match after rewrite, got=%q, want=%q", got, want)
+			}
+		})
+	}
+}
+func TestAutoMitigate(t *testing.T) {
+	for _, tc := range []string{
+		"arara.jar",
+		"bad_jar_in_jar.jar",
+		"bad_jar_in_jar_in_jar.jar",
+		"bad_jar_with_invalid_jar.jar",
+		"vuln-class.jar",
+		"vuln-class-executable",
+	} {
+		tc := tc
+		t.Run(tc, func(t *testing.T) {
+			t.Parallel()
+			src := testdataPath(tc)
+			dest := filepath.Join(t.TempDir(), tc)
+
+			cpFile(t, dest, src)
+
+			if err := autoMitigateJAR(dest); err != nil {
+				t.Fatalf("autoMitigateJar(%s) failed: %v", dest, err)
+			}
+
+			before, _, err := OpenReader(src)
+			if err != nil {
+				t.Fatalf("zip.OpenReader(%q) failed: %v", src, err)
+			}
+			defer before.Close()
+			after, _, err := OpenReader(dest)
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", dest, err)
 			}
@@ -220,12 +319,12 @@ func TestAutoMitigateSignedJAR(t *testing.T) {
 				t.Fatalf("autoMitigateJar(%s) failed: %v", dest, err)
 			}
 
-			before, err := zip.OpenReader(src)
+			before, _, err := OpenReader(src)
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", src, err)
 			}
 			defer before.Close()
-			after, err := zip.OpenReader(dest)
+			after, _, err := OpenReader(dest)
 			if err != nil {
 				t.Fatalf("zip.OpenReader(%q) failed: %v", dest, err)
 			}
