@@ -75,7 +75,7 @@ $ sudo log4jscanner --skip '/data/*' /
 ```
 
 For heavy customization, such as reporting to external endpoints, much of the
-tool's logic is exposed throught the [`jar.Walker`][jar-walker] API.
+tool's logic is exposed through the [`jar.Walker`][jar-walker] API.
 
 [jar-walker]: https://pkg.go.dev/github.com/google/log4jscanner/jar#Walker
 
