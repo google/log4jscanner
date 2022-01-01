@@ -135,9 +135,9 @@ If you do hit a false positive, please open an issue.
 We unfortunately had to squash the history when open sourcing. The following
 contributors were instrumental in this project's development:
 
-- David Dworken (@ddworken)
-- Eric Chiang (@ericchiang)
+- David Dworken ([@ddworken](https://github.com/ddworken))
+- Eric Chiang ([@ericchiang](https://github.com/ericchiang))
 - Julian Bangert
-- Mike Gerow (@gerow)
+- Mike Gerow ([@gerow](https://github.com/gerow))
 - Mit Dalsania
 - Tom D'Netto
