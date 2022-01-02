@@ -137,6 +137,25 @@ func NewReader(ra io.ReaderAt, size int64) (zr *zip.Reader, offset int64, err er
 	return zr, offset, err
 }
 
+// readAll is io.ReadAll but with a known initial buffer size
+func readAll(r io.Reader, sz int64) ([]byte, error) {
+	data := make([]byte, 0, sz)
+	for {
+		if len(data) >= cap(data) {
+			d := append(data[:cap(data)], 0)
+			data = d[:len(data)]
+		}
+		n, err := r.Read(data[len(data):cap(data)])
+		data = data[:len(data)+n]
+		if err != nil {
+			if err == io.EOF {
+				err = nil
+			}
+			return data, err
+		}
+	}
+}
+
 type checker struct {
 	// Does the JAR contain the JNDI lookup class?
 	hasLookupClass bool
@@ -212,7 +231,7 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 				r = io.LimitReader(f, fsize)
 			}
 
-			content, err := io.ReadAll(r)
+			content, err := readAll(r, info.Size())
 			if err != nil {
 				return fmt.Errorf("reading file %s: %v", p, err)
 			}
@@ -280,7 +299,7 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 			return fmt.Errorf("open file %s: %v", p, err)
 		}
 		defer f.Close()
-		data, err := io.ReadAll(f)
+		data, err := readAll(f, fi.Size())
 		if err != nil {
 			return fmt.Errorf("read file %s: %v", p, err)
 		}
