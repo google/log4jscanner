@@ -190,7 +190,6 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 			return nil
 		}
 		if strings.HasSuffix(p, ".class") {
-			// Same logic as http://google3/security/tools/seam/cli/log4j_check.py
 			if c.bad() {
 				// Already determined that the content is bad, no
 				// need to check more.
