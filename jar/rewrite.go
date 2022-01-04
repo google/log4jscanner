@@ -122,8 +122,8 @@ func Rewrite(w io.Writer, zr *zip.Reader) error {
 
 	copyFile:
 		if zipItem.Mode().IsDir() {
-			// Copy() only works on files.
-			if _, err := zw.CreateRaw(&zipItem.FileHeader); err != nil {
+			// Copy() only works on files, so manually create the directory entry
+			if _, err := zw.CreateHeader(&zipItem.FileHeader); err != nil {
 				return fmt.Errorf("failed to copy zip directory %s: %v", zipItem.Name, err)
 			}
 		} else {
