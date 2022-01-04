@@ -20,8 +20,11 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"regexp"
+
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -334,6 +337,75 @@ func TestAutoMitigateSignedJAR(t *testing.T) {
 					name == "SERVER.SF" ||
 					name == "SERVER.RSA"
 			}, &before.Reader, &after.Reader)
+		})
+	}
+}
+
+func TestAutoMitigatedJarsAreCorrectlyFormed(t *testing.T) {
+	if _, err := exec.LookPath("zipinfo"); err != nil {
+		t.Skip("zipinfo not available, skipping test")
+	}
+
+	testCases := []string{
+		"arara.jar",
+		"shadow-6.1.0.jar",
+		"arara.signed.jar",
+		"bad_jar_in_jar_in_jar.jar",
+		"bad_jar_in_jar.jar",
+		"good_jar_in_jar_in_jar.jar",
+		"good_jar_in_jar.jar",
+		"helloworld.jar",
+		"helloworld.signed.jar",
+		"log4j-core-2.12.1.jar",
+		"log4j-core-2.14.0.jar",
+		"log4j-core-2.15.0.jar",
+		"log4j-core-2.16.0.jar",
+		"log4j-core-2.1.jar",
+		"safe1.jar",
+		"safe1.signed.jar",
+	}
+	for _, name := range testCases {
+		t.Run(name, func(t *testing.T) {
+			// Set up
+			src := testdataPath(name)
+			dest := filepath.Join(t.TempDir(), name)
+
+			cpFile(t, dest, src)
+
+			// Mitigate
+			if err := autoMitigateJAR(dest); err != nil {
+				t.Fatalf("autoMitigateJar(%s) failed: %v", dest, err)
+			}
+
+			// Check that the jars were actually mitigated
+			before, err := zip.OpenReader(src)
+			if err != nil {
+				t.Fatalf("zip.OpenReader(%q) failed: %v", src, err)
+			}
+			defer before.Close()
+			after, err := zip.OpenReader(dest)
+			if err != nil {
+				t.Fatalf("zip.OpenReader(%q) failed: %v", dest, err)
+			}
+			defer after.Close()
+			checkJARs(t, func(name string) bool {
+				return name == "JndiLookup.class" ||
+					name == "SERVER.SF" ||
+					name == "SERVER.RSA"
+			}, &before.Reader, &after.Reader)
+
+			// Check that they are well formed
+			out, err := exec.Command("zipinfo", "-v", dest).Output()
+			if err != nil {
+				t.Fatalf("zipinfo command failed for dest %s: %v", dest, err)
+			}
+			match, err := regexp.MatchString(`There are an extra -\d+ bytes preceding this file`, string(out))
+			if err != nil {
+				t.Fatalf("regex failed: %v", err)
+			}
+			if match {
+				t.Fatalf("mitigated jar %s is malformed:\n%v", dest, string(out))
+			}
 		})
 	}
 }
