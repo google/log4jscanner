@@ -352,7 +352,7 @@ func matchesLog4JYARARule(b []byte) bool {
 		if j < 0 {
 			return false
 		}
-		if (j - i) <= 3 {
+		if j <= 3 {
 			return true
 		}
 		start = i + len(log4JYARAPrefix)
