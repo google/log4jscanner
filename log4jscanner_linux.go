@@ -33,10 +33,23 @@ var toIgnore = map[int64]bool{
 	unix.TRACEFS_MAGIC:      true,
 }
 
-func ignoreDir(path string) (bool, error) {
+var networkIgnore = map[int64]bool{
+	unix.SMB_SUPER_MAGIC: true,
+	unix.AFS_SUPER_MAGIC: true,
+	unix.NFS_SUPER_MAGIC: true,
+	0x65735546:           true, // Fuse_SUPER_MAGIC
+	0xff534d42:           true, // CIFS_MAGIC_NUMBER
+	0xfe534d42:           true, // SMB2_MAGIC_NUMBER
+}
+
+func ignoreDir(path string, force bool) (bool, error) {
 	var stat unix.Statfs_t
 	if err := unix.Statfs(path, &stat); err != nil {
 		return false, fmt.Errorf("determining filesystem of %s: %v", path, err)
 	}
-	return toIgnore[stat.Type], nil
+	if force {
+		return toIgnore[stat.Type], nil
+	}
+	return toIgnore[stat.Type] || networkIgnore[stat.Type], nil
+
 }
