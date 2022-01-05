@@ -363,6 +363,8 @@ func TestAutoMitigatedJarsAreCorrectlyFormed(t *testing.T) {
 		"log4j-core-2.1.jar",
 		"safe1.jar",
 		"safe1.signed.jar",
+		"emptydir.zip",
+		"emptydirs.zip",
 	}
 	for _, name := range testCases {
 		t.Run(name, func(t *testing.T) {
