@@ -6,10 +6,10 @@ A log4j vulnerability filesystem scanner and Go package for analyzing JAR files.
 
 ## Installing
 
-Pre-compiled binaries are available as [releases assets][releases].
+Pre-compiled binaries are available as [release assets][releases].
 
-To install from source with an existing [Go][go] installation, either use
-[go install][go-install]:
+To install from source with an existing [Go][go] v1.17+ installation, either
+use [go install][go-install]:
 
 ```
 go install github.com/google/log4jscanner@latest
@@ -75,7 +75,7 @@ $ sudo log4jscanner --skip '/data/*' /
 ```
 
 For heavy customization, such as reporting to external endpoints, much of the
-tool's logic is exposed throught the [`jar.Walker`][jar-walker] API.
+tool's logic is exposed through the [`jar.Walker`][jar-walker] API.
 
 [jar-walker]: https://pkg.go.dev/github.com/google/log4jscanner/jar#Walker
 
@@ -113,7 +113,7 @@ func main() {
 
 	result, err := jar.Parse(&rc.Reader)
 	if err != nil {
-		log.Fatalf("parzing zip file: %v", err)
+		log.Fatalf("parsing zip file: %v", err)
 	}
 	if result.Vulnerable {
 		fmt.Println("File is vulnerable")
