@@ -37,6 +37,7 @@ Flags:
 
     -s, --skip     Glob pattern to skip when scanning (e.g. '/var/run/*'). May
                    be provided multiple times.
+    -f, --force    Don't skip network and userland filesystems. (smb,nfs,afs,fuse)
     -w, --rewrite  Rewrite vulnerable JARs as they are detected.
     -v, --verbose  Print verbose logs to stderr.
 
@@ -58,6 +59,8 @@ func main() {
 		w       bool
 		verbose bool
 		v       bool
+		force   bool
+		f       bool
 		toSkip  []string
 	)
 	appendSkip := func(dir string) error {
@@ -69,6 +72,8 @@ func main() {
 	flag.BoolVar(&w, "w", false, "")
 	flag.BoolVar(&verbose, "verbose", false, "")
 	flag.BoolVar(&v, "v", false, "")
+	flag.BoolVar(&force, "force", false, "")
+	flag.BoolVar(&f, "f", false, "")
 	flag.Func("s", "", appendSkip)
 	flag.Func("skip", "", appendSkip)
 	flag.Usage = usage
@@ -78,13 +83,15 @@ func main() {
 		usage()
 		os.Exit(1)
 	}
+	if f {
+		force = f
+	}
 	if v {
 		verbose = v
 	}
 	if w {
 		rewrite = w
 	}
-
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logf := func(format string, v ...interface{}) {
 		if verbose {
@@ -110,7 +117,7 @@ func main() {
 			if skipDirs[filepath.Base(path)] {
 				return true
 			}
-			ignore, err := ignoreDir(path)
+			ignore, err := ignoreDir(path, force)
 			if err != nil {
 				log.Printf("Error scanning %s: %v", path, err)
 			}

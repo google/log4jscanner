@@ -16,6 +16,6 @@
 
 package main
 
-func ignoreDir(path string) (bool, error) {
+func ignoreDir(path string, force bool) (bool, error) {
 	return false, nil
 }
