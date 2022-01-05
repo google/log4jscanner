@@ -102,6 +102,25 @@ func BenchmarkParse(b *testing.B) {
 	}
 }
 
+func BenchmarkParseParallel(b *testing.B) {
+	filename := "safe1.jar"
+	p := testdataPath(filename)
+	b.ReportAllocs()
+	b.RunParallel(func(pb *testing.PB) {
+		zr, _, err := OpenReader(p)
+		if err != nil {
+			b.Fatalf("zip.OpenReader failed: %v", err)
+		}
+		defer zr.Close()
+		for pb.Next() {
+			_, err := Parse(&zr.Reader)
+			if err != nil {
+				b.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
+			}
+		}
+	})
+}
+
 func TestYARARule(t *testing.T) {
 	data := []byte{
 		0x3c, 0x69, 0x6e, 0x69, 0x74, 0x3e,
