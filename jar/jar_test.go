@@ -37,6 +37,9 @@ func TestParse(t *testing.T) {
 		{"arara.signed.jar.patched", false},
 		{"log4j-core-2.12.1.jar", true},
 		{"log4j-core-2.12.1.jar.patched", false},
+		// log4j 2.12.2 is not affected by log4shell.
+		// See: https://logging.apache.org/log4j/2.x/security.html
+		{"log4j-core-2.12.2.jar", false},
 		{"log4j-core-2.14.0.jar", true},
 		{"log4j-core-2.14.0.jar.patched", false},
 		{"log4j-core-2.15.0.jar", true},
