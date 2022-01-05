@@ -123,7 +123,15 @@ func Rewrite(w io.Writer, zr *zip.Reader) error {
 	copyFile:
 		if zipItem.Mode().IsDir() {
 			// Copy() only works on files, so manually create the directory entry
-			if _, err := zw.CreateHeader(&zipItem.FileHeader); err != nil {
+			dirHeader := zipItem.FileHeader
+			// Reset the Extra field which holds the OS-specific metadata that encodes the last
+			// modified time. This is technically incorrect because it means the mitigated
+			// zips that we create will have the last modified timestamp updated. But, if we don't
+			// do this we create invalid zips because `zw.CreateHeader` assumes that `Extra` is empty
+			// and always appends the modified time to the end of `Extra`. We don't use `zw.CreateRaw`
+			// because we want the rest of the logic that `zw.CreateHeader` provides.
+			dirHeader.Extra = make([]byte, 0)
+			if _, err := zw.CreateHeader(&dirHeader); err != nil {
 				return fmt.Errorf("failed to copy zip directory %s: %v", zipItem.Name, err)
 			}
 		} else {
