@@ -52,7 +52,7 @@ func main() {
 
 	result, err := jar.Parse(&rc.Reader)
 	if err != nil {
-		log.Fatalf("parzing zip file: %v", err)
+		log.Fatalf("parsing zip file: %v", err)
 	}
 	if result.Vulnerable {
 		fmt.Println("File is vulnerable")
