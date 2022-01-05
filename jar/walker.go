@@ -149,7 +149,7 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 			// Not a JAR.
 			return nil
 		}
-		return fmt.Errorf("opennig file as a ZIP archive: %v", err)
+		return fmt.Errorf("opening file as a ZIP archive: %v", err)
 	}
 	if !IsJAR(zr) {
 		return nil

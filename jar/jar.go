@@ -140,14 +140,19 @@ func NewReader(ra io.ReaderAt, size int64) (zr *zip.Reader, offset int64, err er
 }
 
 type checker struct {
-	// Does the JAR contain the JNDI lookup class?
+	// Does the JAR contain JndiLookup.class?  This indicates
+	// log4j >=2.0-beta9 which hasn't been patched by removing
+	// JndiLookup.class.
 	hasLookupClass bool
-	// Does the JAR contain JndiManager with the old constructor, a
-	// version that hasn't been fixed.
-	hasOldJndiManagerConstructor bool
-	// Does the jar contain a string that was added in 2.16 and whether we've checked for it yet
-	seenJndiManagerClass   bool
-	isAtLeastTwoDotSixteen bool
+	// Does the JAR contain JndiManager.class, which indicates log4j >=2.1?
+	hasJndiManagerClass bool
+	// Does the JAR contain JndiManager with a constructor that
+	// indicates log4j <2.15?
+	hasJndiManagerPre215 bool
+	// Does JndiManager have the isJndiEnabled method, which
+	// exists in 2.16+ and 2.12.2 (which is not vulnerable to
+	// log4shell)?
+	hasIsJndiEnabled bool
 
 	mainClass string
 	version   string
@@ -158,7 +163,12 @@ func (c *checker) done() bool {
 }
 
 func (c *checker) bad() bool {
-	return (c.hasLookupClass && c.hasOldJndiManagerConstructor) || (c.hasLookupClass && c.seenJndiManagerClass && !c.isAtLeastTwoDotSixteen)
+	// TODO: Figure out how to detect vulnerable log4j versions <2.1.  Both of these conditions
+	// rely on detecting a vulnerable JndiManager class.  Since JndiManager wasn't present until
+	// log4j 2.1 this misses log4j >=2.0-beta9 && <2.1.
+	vulnerablePre215 := c.hasLookupClass && c.hasJndiManagerPre215 && !c.hasIsJndiEnabled
+	vulnerable215 := c.hasLookupClass && c.hasJndiManagerClass && !c.hasIsJndiEnabled
+	return vulnerablePre215 || vulnerable215
 }
 
 func walkZIP(r *zip.Reader, fn func(f *zip.File) error) error {
@@ -205,6 +215,20 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 				// need to check more.
 				return nil
 			}
+			if !c.hasLookupClass && strings.Contains(p, "JndiLookup.class") {
+				// JndiLookup.class indicates log4j >=2.0-beta9.  No further checks
+				// are required on this class.
+				c.hasLookupClass = true
+				return nil
+			}
+
+			// The only other class we may need to check is JndiManager.class, if we
+			// haven't already done so.
+			if !(c.needsJndiManagerCheck() && strings.Contains(p, "JndiManager.class")) {
+				// Nothing to do.
+				return nil
+			}
+			c.hasJndiManagerClass = true
 
 			f, err := zf.Open()
 			if err != nil {
@@ -221,7 +245,7 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 			}
 			buf := bufPool.Get().([]byte)
 			defer bufPool.Put(buf)
-			return c.checkClass(p, f, buf)
+			return c.checkJndiManager(p, f, buf)
 		}
 		if p == "META-INF/MANIFEST.MF" {
 			mf, err := zf.Open()
@@ -299,6 +323,12 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 	return err
 }
 
+// needsJndiManagerCheck returns true if there's something that we could learn by checking
+// JndiManager bytecode with checkJndiManager.
+func (c *checker) needsJndiManagerCheck() bool {
+	return !c.hasJndiManagerClass || !c.hasJndiManagerPre215 || !c.hasIsJndiEnabled
+}
+
 const (
 	// Replicate YARA rule:
 	//
@@ -363,19 +393,9 @@ func init() {
 	log4jPattern.Longest()
 }
 
-func (c *checker) checkClass(filename string, r io.Reader, buf []byte) error {
-	if !c.hasLookupClass && strings.Contains(filename, "JndiLookup.class") {
-		c.hasLookupClass = true
-	}
-	checkForOldJndiManagerConstructor := !c.hasOldJndiManagerConstructor && strings.Contains(filename, "JndiManager")
-	checkJndiManagerVersion := strings.Contains(filename, "JndiManager.class")
-	if !checkForOldJndiManagerConstructor && !checkJndiManagerVersion {
-		return nil
-	}
-	if checkJndiManagerVersion {
-		c.seenJndiManagerClass = true
-	}
-
+// checkJndiManager class bytecode for presence of the constructor indicating a vulnerable pre-2.15
+// version or the isJndiEnabled method indicating 2.16+ or 2.12.2.
+func (c *checker) checkJndiManager(filename string, r io.Reader, buf []byte) error {
 	br := newByteReader(r, buf)
 	matches := log4jPattern.FindReaderSubmatchIndex(br)
 
@@ -393,25 +413,17 @@ func (c *checker) checkClass(filename string, r io.Reader, buf []byte) error {
 	switch {
 	case matches[2] > 0:
 		// 1. [216Pattern]
-		if checkJndiManagerVersion {
-			c.isAtLeastTwoDotSixteen = true
-		}
+		c.hasIsJndiEnabled = true
 	case matches[4] > 0:
 		// 2. [YARARulePattern]
-		if checkForOldJndiManagerConstructor {
-			c.hasOldJndiManagerConstructor = true
-		}
+		c.hasJndiManagerPre215 = true
 	case matches[6] > 0:
 		// 3. [216Pattern.*YARARulePattern]
 		fallthrough
 	case matches[8] > 0:
 		// 4. [YARARulePattern.*216Pattern]
-		if checkJndiManagerVersion {
-			c.isAtLeastTwoDotSixteen = true
-		}
-		if checkForOldJndiManagerConstructor {
-			c.hasOldJndiManagerConstructor = true
-		}
+		c.hasIsJndiEnabled = true
+		c.hasJndiManagerPre215 = true
 	}
 	return nil
 }
