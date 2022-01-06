@@ -39,6 +39,7 @@ Flags:
                    be provided multiple times.
     -w, --rewrite  Rewrite vulnerable JARs as they are detected.
     -v, --verbose  Print verbose logs to stderr.
+    -b, --backup   Suffix to use to backup a file when rewriting (.bak)
 
 `)
 }
@@ -58,6 +59,8 @@ func main() {
 		w       bool
 		verbose bool
 		v       bool
+		backup  bool
+		b       bool
 		toSkip  []string
 	)
 	appendSkip := func(dir string) error {
@@ -69,6 +72,8 @@ func main() {
 	flag.BoolVar(&w, "w", false, "")
 	flag.BoolVar(&verbose, "verbose", false, "")
 	flag.BoolVar(&v, "v", false, "")
+	flag.BoolVar(&backup, "backup", false, "")
+	flag.BoolVar(&b, "b", false, "")
 	flag.Func("s", "", appendSkip)
 	flag.Func("skip", "", appendSkip)
 	flag.Usage = usage
@@ -84,10 +89,17 @@ func main() {
 	if w {
 		rewrite = w
 	}
+	if b {
+		backup = b
+	}
 
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logf := func(format string, v ...interface{}) {
 		if verbose {
+			log.Printf(format, v...)
+
+		}
+		if backup {
 			log.Printf(format, v...)
 		}
 	}
