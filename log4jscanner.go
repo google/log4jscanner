@@ -16,8 +16,10 @@
 package main
 
 import (
+	"bufio"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"log"
 	"os"
@@ -51,6 +53,27 @@ var skipDirs = map[string]bool{
 	".idea":        true,
 
 	// TODO(ericchiang): expand
+}
+
+//TODO(ksandoval): move function
+func copyFile(dstFileName string, srcFileName string) (written int64, err error) {
+	srcFile, err := os.Open(srcFileName)
+	if err != nil {
+		fmt.Printf("open file error = %v\n", err)
+	}
+	defer srcFile.Close()
+
+	reader := bufio.NewReader(srcFile)
+
+	dstFile, err := os.OpenFile(dstFileName, os.O_WRONLY|os.O_CREATE, 0666)
+	if err != nil {
+		fmt.Printf("open file error = %v\n", err)
+	}
+
+	writer := bufio.NewWriter(dstFile)
+
+	defer dstFile.Close()
+	return io.Copy(writer, reader)
 }
 
 func main() {
@@ -99,9 +122,6 @@ func main() {
 			log.Printf(format, v...)
 
 		}
-		if backup {
-			log.Printf(format, v...)
-		}
 	}
 	seen := 0
 	walker := jar.Walker{
@@ -141,6 +161,18 @@ func main() {
 				fmt.Println(path)
 			}
 		},
+	}
+
+	srcFile := "./jar/testdata/arara.jar"
+	dstFile := "./jar/backup/arara.save.jar"
+
+	if backup {
+		_, err := copyFile(dstFile, srcFile)
+		if err == nil {
+			fmt.Println("Los archivos se copiaron")
+		} else {
+			fmt.Printf("Error al copiar el archivo ... err=%v\n", err)
+		}
 	}
 
 	for _, dir := range dirs {
