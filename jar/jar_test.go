@@ -31,6 +31,8 @@ func TestParse(t *testing.T) {
 		filename string
 		wantBad  bool
 	}{
+		{"400mb.jar", false},
+		{"400mb_jar_in_jar.jar", false},
 		{"arara.jar", true},
 		{"arara.jar.patched", false},
 		{"arara.signed.jar", true},
@@ -70,6 +72,11 @@ func TestParse(t *testing.T) {
 		{"helloworld-executable", false},
 		{"helloworld.jar", false},
 		{"helloworld.signed.jar", false},
+
+		// Ensure robustness to zip bombs from
+		// https://www.bamsoftware.com/hacks/zipbomb/.
+		{"zipbombs/zbsm_in_jar.jar", false},
+		{"zipbombs/zbsm.jar", false},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.filename, func(t *testing.T) {
@@ -88,6 +95,50 @@ func TestParse(t *testing.T) {
 				t.Errorf("checkJAR() returned unexpected value, got bad=%t, want bad=%t", got, tc.wantBad)
 			}
 		})
+	}
+}
+
+func TestMaxBytes(t *testing.T) {
+	p := testdataPath("400mb_jar_in_jar.jar")
+	zr, _, err := OpenReader(p)
+	if err != nil {
+		t.Fatalf("zip.OpenReader failed: %v", err)
+	}
+	defer zr.Close()
+
+	c := &Parser{MaxBytes: 4 << 20 /* 4MiB */}
+	if r, err := c.Parse(&zr.Reader); err == nil {
+		t.Errorf("Parse() = %+v, want error", r)
+	}
+}
+
+func TestMaxDepth(t *testing.T) {
+	p := testdataPath("bad_jar_in_jar_in_jar.jar")
+	zr, _, err := OpenReader(p)
+	if err != nil {
+		t.Fatalf("zip.OpenReader failed: %v", err)
+	}
+	defer zr.Close()
+
+	c := &Parser{MaxDepth: 1}
+	if r, err := c.Parse(&zr.Reader); err == nil {
+		t.Errorf("Parse() = %+v, want error", r)
+	}
+}
+
+// TestInfiniteRecursion ensures that Parse does not get stuck in an
+// infinitely recursive zip.
+func TestInfiniteRecursion(t *testing.T) {
+	// Using infinite r.zip from https://research.swtch.com/zip.
+	p := testdataPath("zipbombs/r.zip")
+	zr, _, err := OpenReader(p)
+	if err != nil {
+		t.Fatalf("zip.OpenReader failed: %v", err)
+	}
+	defer zr.Close()
+	report, err := Parse(&zr.Reader)
+	if err == nil {
+		t.Errorf("Parse() failed to return error on infintely recursive zip, got %+v, want error", report)
 	}
 }
 

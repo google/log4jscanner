@@ -27,3 +27,10 @@ exec java -jar $file_path "$@"
 ' > vuln-class-executable
 cat vuln-class.jar >> vuln-class-executable
 chmod +x vuln-class-executable
+
+mkdir -p tmp
+dd if=/dev/zero of=tmp/400mb bs=1M count=400
+zip 400mb.jar tmp/400mb
+rm -rf tmp
+
+zip 400mb_jar_in_jar.jar 400mb.jar
