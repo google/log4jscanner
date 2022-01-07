@@ -130,6 +130,9 @@ JARs automatically or taking other mitigations based on scan results.
 
 If you do hit a false positive, please open an issue.
 
+Note: This scanner purposefully flags the patched versions of log4j for Java 6
+and Java 7 as vulnerable (v2.12.3+ and v2.3.1+). 
+
 ## Contributors
 
 We unfortunately had to squash the history when open sourcing. The following
