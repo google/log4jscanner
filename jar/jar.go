@@ -32,17 +32,56 @@ import (
 	"rsc.io/binaryregexp"
 )
 
-const (
-	maxZipDepth = 16
-	maxZipSize  = 4 << 30 // 4GiB
-)
-
 var exts = map[string]bool{
 	".jar":  true,
 	".war":  true,
 	".ear":  true,
 	".zip":  true,
 	".jmod": true,
+}
+
+// Parser allows tuning paramters of a vulnerable log4j scan.  The
+// zero value provides reasonable defaults.
+type Parser struct {
+	// MaxDepth is the maximum depth of recursive archives below
+	// the top level that will be unpacked.  Default is 16.
+	MaxDepth int
+	// MaxBytes is the maximum size of files that will be
+	// read into memory during scanning.  Default is 4GiB.
+	MaxBytes int64
+}
+
+const (
+	defaultMaxZipDepth = 16
+	defaultMaxZipBytes = 4 << 30 // 4GiB
+)
+
+func (ch *Parser) maxDepth() int {
+	if ch.MaxDepth == 0 {
+		return defaultMaxZipDepth
+	}
+	return ch.MaxDepth
+}
+
+func (ch *Parser) maxBytes() int64 {
+	if ch.MaxBytes == 0 {
+		return defaultMaxZipBytes
+	}
+	return ch.MaxBytes
+}
+
+// Parse traverses a JAR file, attempting to detect any usages of
+// vulnerable log4j versions.
+func (ch *Parser) Parse(r *zip.Reader) (*Report, error) {
+	c := checker{Parser: ch}
+	if err := c.checkJAR(r, 0, 0); err != nil {
+		return nil, fmt.Errorf("failed to check JAR: %v", err)
+	}
+	return &Report{
+		Vulnerable: c.bad(),
+		MainClass:  c.mainClass,
+		Version:    c.version,
+	}, nil
 }
 
 // Report contains information about a scanned JAR.
@@ -59,18 +98,11 @@ type Report struct {
 	Version   string
 }
 
-// Parse traverses a JAR file, attempting to detect any usages of vulnerable
-// log4j versions.
+// Parse traverses a JAR file, attempting to detect any usages of
+// vulnerable log4j versions.
 func Parse(r *zip.Reader) (*Report, error) {
-	var c checker
-	if err := c.checkJAR(r, 0, 0); err != nil {
-		return nil, fmt.Errorf("failed to check JAR: %v", err)
-	}
-	return &Report{
-		Vulnerable: c.bad(),
-		MainClass:  c.mainClass,
-		Version:    c.version,
-	}, nil
+	c := &Parser{}
+	return c.Parse(r)
 }
 
 // ReadCloser mirrors zip.ReadCloser.
@@ -140,6 +172,8 @@ func NewReader(ra io.ReaderAt, size int64) (zr *zip.Reader, offset int64, err er
 }
 
 type checker struct {
+	*Parser
+
 	// Does the JAR contain JndiLookup.class?  This indicates
 	// log4j >=2.0-beta9 which hasn't been patched by removing
 	// JndiLookup.class.
@@ -192,8 +226,8 @@ var bufPool = sync.Pool{
 }
 
 func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
-	if depth > maxZipDepth {
-		return fmt.Errorf("reached max zip depth of %d", maxZipDepth)
+	if depth > c.maxDepth() {
+		return fmt.Errorf("reached max zip depth of %d", c.maxDepth())
 	}
 
 	err := walkZIP(r, func(zf *zip.File) error {
@@ -240,7 +274,7 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 			if err != nil {
 				return fmt.Errorf("stat file %s: %v", p, err)
 			}
-			if fsize := info.Size(); fsize+size > maxZipSize {
+			if fsize := info.Size(); fsize+size > c.maxBytes() {
 				return fmt.Errorf("reading %s would exceed memory limit: %v", p, err)
 			}
 			buf := bufPool.Get().([]byte)
@@ -294,8 +328,8 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
 		}
 		// If we're about to read more than the max size we've configure ahead of time then stop.
 		// Note that this only applies to embedded ZIPs/JARs. The outer ZIP/JAR can still be larger than the limit.
-		if size+fi.Size() > maxZipSize {
-			return fmt.Errorf("archive inside archive at %q is greater than 4GB, skipping", p)
+		if size+fi.Size() > c.maxBytes() {
+			return fmt.Errorf("archive inside archive at %q is greater than %d bytes, skipping", p, c.maxBytes())
 		}
 		f, err := zf.Open()
 		if err != nil {
