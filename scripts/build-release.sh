@@ -62,7 +62,7 @@ function build {
 			-czvf \
 			"${PWD}/bin/log4jscanner-${VERSION}-${GOOS}-${GOARCH}.tar.gz" \
 			-C "$TEMP_DIR" \
-			"./"
+			"log4jscanner"
 	fi
 	rm -rf "$TEMP_DIR"
 }
