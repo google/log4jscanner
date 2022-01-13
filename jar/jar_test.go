@@ -20,6 +20,9 @@ import (
 	"io"
 	"path/filepath"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 var testdataPath = func(p string) string {
@@ -123,6 +126,66 @@ func TestMaxDepth(t *testing.T) {
 	c := &Parser{MaxDepth: 1}
 	if r, err := c.Parse(&zr.Reader); err == nil {
 		t.Errorf("Parse() = %+v, want error", r)
+	}
+}
+
+// TestFileError verifies that FileError is invoked with correct paths when an error is encountered
+// while processing a JAR file.  The test then verifies that scanning continues and successfully
+// identifies a vulnerable log4j later in the JAR file.  corrupt.jar contains a file that will be
+// read by checkJAR (decoy/JndiManager.class) before encountering other vulnerable log4j files.  The
+// decoy file triggers an error because it has an unsupported compression algorithm.
+// corrupt_jar_in_jar.jar is similar, except that it contains corrupt.jar before vuln-class.jar.
+func TestFileError(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		file string
+		// want is the expected path provided to FileError
+		want string
+	}{
+		{
+			file: "corrupt.jar",
+			want: filepath.Join("corrupt.jar", "decoy", "JndiManager.class"),
+		},
+		{
+			file: "corrupt_jar_in_jar.jar",
+			want: filepath.Join("corrupt_jar_in_jar.jar", "corrupt.jar", "decoy", "JndiManager.class"),
+		},
+	}
+
+	for _, tc := range testCases {
+		tc := tc
+		t.Run(tc.file, func(t *testing.T) {
+			t.Parallel()
+			p := testdataPath(tc.file)
+			zr, _, err := OpenReader(p)
+			if err != nil {
+				t.Fatalf("OpenReader failed: %v", err)
+			}
+			defer zr.Close()
+
+			var got []string
+			pr := &Parser{
+				Name: tc.file,
+				FileError: func(path string, err error) error {
+					t.Logf("FileError(%q, %v)", path, err)
+					got = append(got, path)
+					return nil
+				},
+			}
+
+			r, err := pr.Parse(&zr.Reader)
+			if err != nil {
+				t.Fatalf("Parse() = %+v, want nil error", err)
+			}
+			if !r.Vulnerable {
+				t.Error("Parse() returned not vulnerable, want vulnerable")
+			}
+
+			if diff := cmp.Diff([]string{tc.want}, got, cmpopts.EquateEmpty()); diff != "" {
+				t.Errorf("Parse() returned diff (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

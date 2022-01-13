@@ -34,3 +34,15 @@ zip 400mb.jar tmp/400mb
 rm -rf tmp
 
 zip 400mb_jar_in_jar.jar 400mb.jar
+
+# Create a JAR file that is corrupted so that it will trigger an error when
+# being processed by checkJAR before it encounters vulnerable log4j files.  We
+# do so by inserting a JndiManager.class file with an unsupported compression
+# algorithm.
+mkdir -p corrupt/{decoy,vuln}
+touch corrupt/decoy/JndiManager.class
+unzip vuln-class.jar -d corrupt/vuln
+(cd corrupt; jar cf corrupt-orig.jar decoy vuln)
+go run corruptjar.go decoy/JndiManager.class <corrupt/corrupt-orig.jar >corrupt.jar
+rm -rf corrupt
+jar cf corrupt_jar_in_jar.jar corrupt.jar vuln-class.jar
