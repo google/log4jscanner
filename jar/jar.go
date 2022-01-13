@@ -25,6 +25,7 @@ import (
 	"io/fs"
 	"os"
 	"path"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -49,6 +50,15 @@ type Parser struct {
 	// MaxBytes is the maximum size of files that will be
 	// read into memory during scanning.  Default is 4GiB.
 	MaxBytes int64
+	// Name is the name of the file being parsed.  Default is "".
+	Name string
+	// FileError can be used to handle errors for a JAR file.
+	// When checking a file returns an error other than
+	// fs.SkipDir, FileError will be called with the offending
+	// path and error.  If FileError returns nil, checking will
+	// continue.  Otherwise, checking will abort.  Default is to
+	// abort checking whenever err != nil.
+	FileError func(path string, err error) error
 }
 
 const (
@@ -56,25 +66,32 @@ const (
 	defaultMaxZipBytes = 4 << 30 // 4GiB
 )
 
-func (ch *Parser) maxDepth() int {
-	if ch.MaxDepth == 0 {
+func (p *Parser) maxDepth() int {
+	if p.MaxDepth == 0 {
 		return defaultMaxZipDepth
 	}
-	return ch.MaxDepth
+	return p.MaxDepth
 }
 
-func (ch *Parser) maxBytes() int64 {
-	if ch.MaxBytes == 0 {
+func (p *Parser) maxBytes() int64 {
+	if p.MaxBytes == 0 {
 		return defaultMaxZipBytes
 	}
-	return ch.MaxBytes
+	return p.MaxBytes
+}
+
+func (p *Parser) fileError(path string, err error) error {
+	if p.FileError != nil {
+		return p.FileError(path, err)
+	}
+	return err
 }
 
 // Parse traverses a JAR file, attempting to detect any usages of
 // vulnerable log4j versions.
-func (ch *Parser) Parse(r *zip.Reader) (*Report, error) {
-	c := checker{Parser: ch}
-	if err := c.checkJAR(r, 0, 0); err != nil {
+func (p *Parser) Parse(r *zip.Reader) (*Report, error) {
+	c := checker{Parser: p}
+	if err := c.checkJAR(r, 0, 0, p.Name); err != nil {
 		return nil, fmt.Errorf("failed to check JAR: %v", err)
 	}
 	return &Report{
@@ -205,18 +222,6 @@ func (c *checker) bad() bool {
 	return vulnerablePre215 || vulnerable215
 }
 
-func walkZIP(r *zip.Reader, fn func(f *zip.File) error) error {
-	for _, f := range r.File {
-		if err := fn(f); err != nil {
-			if errors.Is(err, fs.SkipDir) {
-				return nil
-			}
-			return err
-		}
-	}
-	return nil
-}
-
 const bufSize = 4 << 10 // 4 KiB
 
 var bufPool = sync.Pool{
@@ -225,136 +230,147 @@ var bufPool = sync.Pool{
 	},
 }
 
-func (c *checker) checkJAR(r *zip.Reader, depth int, size int64) error {
+func (c *checker) checkJAR(r *zip.Reader, depth int, size int64, jar string) error {
 	if depth > c.maxDepth() {
 		return fmt.Errorf("reached max zip depth of %d", c.maxDepth())
 	}
 
-	err := walkZIP(r, func(zf *zip.File) error {
-		d := fs.FileInfoToDirEntry(zf.FileInfo())
-		p := zf.Name
-		if c.done() {
-			if d.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-
-		if !d.Type().IsRegular() {
-			return nil
-		}
-		if strings.HasSuffix(p, ".class") {
-			if c.bad() {
-				// Already determined that the content is bad, no
-				// need to check more.
+	for _, f := range r.File {
+		if err := c.checkFile(f, depth, size, jar); err != nil {
+			if errors.Is(err, fs.SkipDir) {
 				return nil
 			}
-			if !c.hasLookupClass && strings.Contains(p, "JndiLookup.class") {
-				// JndiLookup.class indicates log4j >=2.0-beta9.  No further checks
-				// are required on this class.
-				c.hasLookupClass = true
-				return nil
+			if e := c.fileError(filepath.Join(jar, f.Name), err); e != nil {
+				return e
 			}
+		}
+	}
+	return nil
+}
 
-			// The only other class we may need to check is JndiManager.class, if we
-			// haven't already done so.
-			if !(c.needsJndiManagerCheck() && strings.Contains(p, "JndiManager.class")) {
-				// Nothing to do.
-				return nil
-			}
-			c.hasJndiManagerClass = true
-
-			f, err := zf.Open()
-			if err != nil {
-				return fmt.Errorf("opening file %s: %v", p, err)
-			}
-			defer f.Close()
-
-			info := zf.FileInfo()
-			if err != nil {
-				return fmt.Errorf("stat file %s: %v", p, err)
-			}
-			if fsize := info.Size(); fsize+size > c.maxBytes() {
-				return fmt.Errorf("reading %s would exceed memory limit: %v", p, err)
-			}
-			buf := bufPool.Get().([]byte)
-			defer bufPool.Put(buf)
-			return c.checkJndiManager(p, f, buf)
-		}
-		if p == "META-INF/MANIFEST.MF" {
-			mf, err := zf.Open()
-			if err != nil {
-				return fmt.Errorf("opening manifest file %s: %v", p, err)
-			}
-			defer mf.Close()
-
-			buf := bufPool.Get().([]byte)
-			defer bufPool.Put(buf)
-
-			s := bufio.NewScanner(mf)
-			s.Buffer(buf, bufio.MaxScanTokenSize)
-			for s.Scan() {
-				// Use s.Bytes instead of s.Text to avoid a string allocation.
-				b := s.Bytes()
-				// Use IndexByte directly instead of strings.Split to avoid allocating a return slice.
-				i := bytes.IndexByte(b, ':')
-				if i < 0 {
-					continue
-				}
-				k, v := b[:i], b[i+1:]
-				if bytes.IndexByte(v, ':') >= 0 {
-					continue
-				}
-				if string(k) == "Main-Class" {
-					c.mainClass = strings.TrimSpace(string(v))
-				} else if string(k) == "Implementation-Version" {
-					c.version = strings.TrimSpace(string(v))
-				}
-			}
-			if err := s.Err(); err != nil {
-				return fmt.Errorf("scanning manifest file %s: %v", p, err)
-			}
-			return nil
-		}
-
-		// Scan for jars within jars.
-		if !exts[path.Ext(p)] {
-			return nil
-		}
-		// We've found a jar in a jar. Open it!
-		fi, err := d.Info()
-		if err != nil {
-			return fmt.Errorf("failed to get archive inside of archive %s: %v", p, err)
-		}
-		// If we're about to read more than the max size we've configure ahead of time then stop.
-		// Note that this only applies to embedded ZIPs/JARs. The outer ZIP/JAR can still be larger than the limit.
-		if size+fi.Size() > c.maxBytes() {
-			return fmt.Errorf("archive inside archive at %q is greater than %d bytes, skipping", p, c.maxBytes())
-		}
-		f, err := zf.Open()
-		if err != nil {
-			return fmt.Errorf("open file %s: %v", p, err)
-		}
-		defer f.Close()
-		data, err := io.ReadAll(f)
-		if err != nil {
-			return fmt.Errorf("read file %s: %v", p, err)
-		}
-		br := bytes.NewReader(data)
-		r2, err := zip.NewReader(br, br.Size())
-		if err != nil {
-			if err == zip.ErrFormat {
-				// Not a zip file.
-				return nil
-			}
-			return fmt.Errorf("parsing file %s: %v", p, err)
-		}
-		if err := c.checkJAR(r2, depth+1, size+fi.Size()); err != nil {
-			return fmt.Errorf("checking sub jar %s: %v", p, err)
+func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) error {
+	d := fs.FileInfoToDirEntry(zf.FileInfo())
+	p := zf.Name
+	if c.done() {
+		if d.IsDir() {
+			return fs.SkipDir
 		}
 		return nil
-	})
-	return err
+	}
+
+	if !d.Type().IsRegular() {
+		return nil
+	}
+	if strings.HasSuffix(p, ".class") {
+		if c.bad() {
+			// Already determined that the content is bad, no
+			// need to check more.
+			return nil
+		}
+		if !c.hasLookupClass && strings.Contains(p, "JndiLookup.class") {
+			// JndiLookup.class indicates log4j >=2.0-beta9.  No further checks
+			// are required on this class.
+			c.hasLookupClass = true
+			return nil
+		}
+
+		// The only other class we may need to check is JndiManager.class, if we
+		// haven't already done so.
+		if !(c.needsJndiManagerCheck() && strings.Contains(p, "JndiManager.class")) {
+			// Nothing to do.
+			return nil
+		}
+		c.hasJndiManagerClass = true
+
+		f, err := zf.Open()
+		if err != nil {
+			return fmt.Errorf("opening file %s: %v", p, err)
+		}
+		defer f.Close()
+
+		info := zf.FileInfo()
+		if err != nil {
+			return fmt.Errorf("stat file %s: %v", p, err)
+		}
+		if fsize := info.Size(); fsize+size > c.maxBytes() {
+			return fmt.Errorf("reading %s would exceed memory limit: %v", p, err)
+		}
+		buf := bufPool.Get().([]byte)
+		defer bufPool.Put(buf)
+		return c.checkJndiManager(p, f, buf)
+	}
+	if p == "META-INF/MANIFEST.MF" {
+		mf, err := zf.Open()
+		if err != nil {
+			return fmt.Errorf("opening manifest file %s: %v", p, err)
+		}
+		defer mf.Close()
+
+		buf := bufPool.Get().([]byte)
+		defer bufPool.Put(buf)
+
+		s := bufio.NewScanner(mf)
+		s.Buffer(buf, bufio.MaxScanTokenSize)
+		for s.Scan() {
+			// Use s.Bytes instead of s.Text to avoid a string allocation.
+			b := s.Bytes()
+			// Use IndexByte directly instead of strings.Split to avoid allocating a return slice.
+			i := bytes.IndexByte(b, ':')
+			if i < 0 {
+				continue
+			}
+			k, v := b[:i], b[i+1:]
+			if bytes.IndexByte(v, ':') >= 0 {
+				continue
+			}
+			if string(k) == "Main-Class" {
+				c.mainClass = strings.TrimSpace(string(v))
+			} else if string(k) == "Implementation-Version" {
+				c.version = strings.TrimSpace(string(v))
+			}
+		}
+		if err := s.Err(); err != nil {
+			return fmt.Errorf("scanning manifest file %s: %v", p, err)
+		}
+		return nil
+	}
+
+	// Scan for jars within jars.
+	if !exts[path.Ext(p)] {
+		return nil
+	}
+	// We've found a jar in a jar. Open it!
+	fi, err := d.Info()
+	if err != nil {
+		return fmt.Errorf("failed to get archive inside of archive %s: %v", p, err)
+	}
+	// If we're about to read more than the max size we've configure ahead of time then stop.
+	// Note that this only applies to embedded ZIPs/JARs. The outer ZIP/JAR can still be larger than the limit.
+	if size+fi.Size() > c.maxBytes() {
+		return fmt.Errorf("archive inside archive at %q is greater than %d bytes, skipping", p, c.maxBytes())
+	}
+	f, err := zf.Open()
+	if err != nil {
+		return fmt.Errorf("open file %s: %v", p, err)
+	}
+	defer f.Close()
+	data, err := io.ReadAll(f)
+	if err != nil {
+		return fmt.Errorf("read file %s: %v", p, err)
+	}
+	br := bytes.NewReader(data)
+	r2, err := zip.NewReader(br, br.Size())
+	if err != nil {
+		if err == zip.ErrFormat {
+			// Not a zip file.
+			return nil
+		}
+		return fmt.Errorf("parsing file %s: %v", p, err)
+	}
+	if err := c.checkJAR(r2, depth+1, size+fi.Size(), filepath.Join(jar, p)); err != nil {
+		return fmt.Errorf("checking sub jar %s: %v", p, err)
+	}
+	return nil
 }
 
 // needsJndiManagerCheck returns true if there's something that we could learn by checking
