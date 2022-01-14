@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -33,54 +34,181 @@ func TestParse(t *testing.T) {
 	testCases := []struct {
 		filename string
 		wantBad  bool
+		wantCVEs []cveID
 	}{
-		{"400mb.jar", false},
-		{"400mb_jar_in_jar.jar", false},
-		{"arara.jar", true},
-		{"arara.jar.patched", false},
-		{"arara.signed.jar", true},
-		{"arara.signed.jar.patched", false},
-		{"log4j-core-2.0-beta9.jar", true},
-		{"log4j-core-2.12.1.jar", true},
-		{"log4j-core-2.12.1.jar.patched", false},
+		{
+			filename: "400mb.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "400mb_jar_in_jar.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "arara.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "arara.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "arara.signed.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "arara.signed.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "log4j-core-2.0-beta9.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "log4j-core-2.12.1.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "log4j-core-2.12.1.jar.patched",
+			wantBad:  false,
+		},
 		// log4j 2.12.2 is not affected by log4shell.
 		// See: https://logging.apache.org/log4j/2.x/security.html
-		{"log4j-core-2.12.2.jar", false},
-		{"log4j-core-2.14.0.jar", true},
-		{"log4j-core-2.14.0.jar.patched", false},
-		{"log4j-core-2.15.0.jar", true},
-		{"log4j-core-2.15.0.jar.patched", false},
-		{"log4j-core-2.16.0.jar", false},
-		{"log4j-core-2.1.jar", true},
-		{"log4j-core-2.1.jar.patched", false},
-		{"safe1.jar", false},
-		{"safe1.signed.jar", false},
+		{
+			filename: "log4j-core-2.12.2.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "log4j-core-2.14.0.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "log4j-core-2.14.0.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "log4j-core-2.15.0.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_45046},
+		},
+		{
+			filename: "log4j-core-2.15.0.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "log4j-core-2.16.0.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "log4j-core-2.1.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "log4j-core-2.1.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "safe1.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "safe1.signed.jar",
+			wantBad:  false,
+		},
 		// Archive contains a malformed directory that causes archive/zip to
 		// return an error.
 		// See https://go.dev/issues/50390
-		{"selenium-api-3.141.59.jar", false},
+		{
+			filename: "selenium-api-3.141.59.jar",
+			wantBad:  false,
+		},
 		// Test case where it contains a JndiLookupOther.class file that shouldn't be detected as vulnerable
-		{"similarbutnotvuln.jar", false},
-		{"vuln-class.jar", true},
-		{"vuln-class-executable", true},
-		{"vuln-class.jar.patched", false},
-		{"good_jar_in_jar.jar", false},
-		{"good_jar_in_jar_in_jar.jar", false},
-		{"bad_jar_in_jar.jar", true},
-		{"bad_jar_in_jar.jar.patched", false},
-		{"bad_jar_in_jar_in_jar.jar", true},
-		{"bad_jar_in_jar_in_jar.jar.patched", false},
-		{"bad_jar_with_invalid_jar.jar", true},
-		{"bad_jar_with_invalid_jar.jar.patched", false},
-		{"good_jar_with_invalid_jar.jar", false},
-		{"helloworld-executable", false},
-		{"helloworld.jar", false},
-		{"helloworld.signed.jar", false},
+		{
+			filename: "similarbutnotvuln.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "vuln-class.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "vuln-class-executable",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "vuln-class.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "good_jar_in_jar.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "good_jar_in_jar_in_jar.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "bad_jar_in_jar.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "bad_jar_in_jar.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "bad_jar_in_jar_in_jar.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "bad_jar_in_jar_in_jar.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "bad_jar_with_invalid_jar.jar",
+			wantBad:  true,
+			wantCVEs: []cveID{cve_2021_44228, cve_2021_45046},
+		},
+		{
+			filename: "bad_jar_with_invalid_jar.jar.patched",
+			wantBad:  false,
+		},
+		{
+			filename: "good_jar_with_invalid_jar.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "helloworld-executable",
+			wantBad:  false,
+		},
+		{
+			filename: "helloworld.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "helloworld.signed.jar",
+			wantBad:  false,
+		},
 
 		// Ensure robustness to zip bombs from
 		// https://www.bamsoftware.com/hacks/zipbomb/.
-		{"zipbombs/zbsm_in_jar.jar", false},
-		{"zipbombs/zbsm.jar", false},
+		{
+			filename: "zipbombs/zbsm_in_jar.jar",
+			wantBad:  false,
+		},
+		{
+			filename: "zipbombs/zbsm.jar",
+			wantBad:  false,
+		},
 	}
 	for _, tc := range testCases {
 		t.Run(tc.filename, func(t *testing.T) {
@@ -92,11 +220,15 @@ func TestParse(t *testing.T) {
 			defer zr.Close()
 			report, err := Parse(&zr.Reader)
 			if err != nil {
-				t.Fatalf("Scan() returned an unexpected error, got %v, want nil", err)
+				t.Fatalf("Parse() returned an unexpected error, got %v, want nil", err)
 			}
 			got := report.Vulnerable
 			if tc.wantBad != got {
-				t.Errorf("checkJAR() returned unexpected value, got bad=%t, want bad=%t", got, tc.wantBad)
+				t.Errorf("Parse() returned unexpected value, got bad=%t, want bad=%t", got, tc.wantBad)
+			}
+
+			if diff := cmp.Diff(tc.wantCVEs, vulnIDs(report.Vulns), cmpopts.EquateEmpty(), cmpopts.SortSlices(cveIDLess)); diff != "" {
+				t.Errorf("Parse() returned unexpected Vulns, diff (-want +got):\n%s", diff)
 			}
 		})
 	}
@@ -416,4 +548,19 @@ func (f *faultReader) Read(b []byte) (int, error) {
 		return f.after - (f.read - n), f.fault
 	}
 	return n, err
+}
+
+// vulnIDs extracts the cveIDs from an array of Vulns.
+func vulnIDs(vs []*Vuln) []cveID {
+	var ids []cveID
+	for _, v := range vs {
+		ids = append(ids, cveID(v.CVE))
+	}
+	return ids
+}
+
+// cveIDLess returns true if a comes lexically before b.  It can be
+// used with cmpopts.SortSlices.
+func cveIDLess(a, b cveID) bool {
+	return strings.Compare(a.String(), b.String()) < 0
 }
