@@ -48,6 +48,18 @@ const (
 	jndiLookupClass  = "JndiLookup.class"
 )
 
+// CVEs detected. We define them as constants to catch typos.
+const (
+	cve_2021_44228 cveID = "CVE-2021-44228" // JNDI
+	cve_2021_45046 cveID = "CVE-2021-45046" // Thread Context Lookup
+)
+
+type cveID string
+
+func (id cveID) String() string {
+	return string(id)
+}
+
 // Parser allows tuning paramters of a vulnerable log4j scan.  The
 // zero value provides reasonable defaults.
 type Parser struct {
@@ -101,8 +113,15 @@ func (p *Parser) Parse(r *zip.Reader) (*Report, error) {
 	if err := c.checkJAR(r, 0, 0, p.Name); err != nil {
 		return nil, fmt.Errorf("failed to check JAR: %v", err)
 	}
+
+	var vs []*Vuln
+	for _, id := range c.cves() {
+		vs = append(vs, &Vuln{CVE: id.String()})
+	}
+
 	return &Report{
 		Vulnerable: c.bad(),
+		Vulns:      vs,
 		MainClass:  c.mainClass,
 		Version:    c.version,
 	}, nil
@@ -116,10 +135,19 @@ type Report struct {
 	// Note that this package considers the 2.15.0 versions vulnerable.
 	Vulnerable bool
 
+	// Vulns gives details on the individual vulnerabilities detected.
+	Vulns []*Vuln
+
 	// MainClass and Version are information taken from the MANIFEST.MF file.
 	// Version indicates the version of JAR, NOT the log4j package.
 	MainClass string
 	Version   string
+}
+
+// Vuln reports details of a vulnerability detected.
+type Vuln struct {
+	// CVE is the CVE ID of the vulnerability.
+	CVE string
 }
 
 // Parse traverses a JAR file, attempting to detect any usages of
@@ -223,29 +251,55 @@ func (c *checker) done() bool {
 	return c.bad() && c.mainClass != ""
 }
 
-func (c *checker) bad() bool {
-	// Care must be taken in the formulae below with respect to the
-	// !c.hasIsJndiEnabled clause.  It is satisfied by default until
-	// JndiManager.class is encountered.  To prevent early termination of a
-	// scan with an incorrect result, we have to ensure that we have already
-	// encountered JndiManager.class (e.g. hasJndiManager*) or we have
-	// encountered positive evidence that it will be absent
-	// (i.e. log4j <2.1).
-
+// Vulnerability signatures.
+// Note: Care must be taken in the formulae below with respect to the
+// !c.hasIsJndiEnabled clause.  It is satisfied by default until
+// JndiManager.class is encountered.  To prevent early termination of
+// a scan with an incorrect result, we have to ensure that we have
+// already encountered JndiManager.class (e.g. hasJndiManager*) or we
+// have encountered positive evidence that it will be absent
+// (i.e. log4j <2.1).
+var sigs = map[cveID]func(*checker) bool{
 	// CVE-2021-44228 - Initial log4shell vulnerability affecting
 	// Log4j2 2.0-beta9 through 2.12.1 (inclusive, 2.12.2 is not
 	// vulnerable) and 2.13.0 through 2.15.0 (exclusive).
-	vulnerablePre215 := c.hasLookupClass && // unpatched >=2.0-beta9 and
-		(c.hasInitialContext || // <2.1
-			c.hasJndiManagerPre215) && // >=2.1 && <2.15 and
-		!c.hasIsJndiEnabled // <2.16 && !2.12.2
+	cve_2021_44228: func(c *checker) bool {
+		return c.hasLookupClass && // unpatched >=2.0-beta9 and
+			(c.hasInitialContext || // <2.1
+				c.hasJndiManagerPre215) && // >=2.1 && <2.15 and
+			!c.hasIsJndiEnabled // <2.16 && !2.12.2
+	},
 
-	// CVE-2021-45046 - Log4j2 2.15.0
-	vulnerable215 := c.hasLookupClass && // unpatched >=2.0-beta9 and
-		c.hasJndiManagerClass && // >=2.1 and
-		!c.hasIsJndiEnabled // <2.16 && !2.12.2
+	// CVE-2021-45046 - Thread Context Lookup Pattern
+	// vulnerability affects all Log4j2 versions >=2.0-beta9 and
+	// <=2.15.0, except for 2.12.2.
+	// See: https://logging.apache.org/log4j/2.x/security.html
+	cve_2021_45046: func(c *checker) bool {
+		return c.hasLookupClass && // unpatched >=2.0-beta9 and
+			(c.hasInitialContext || // <2.1
+				c.hasJndiManagerClass) && // >=2.1 and
+			!c.hasIsJndiEnabled // <2.16 && !2.12.2
+	},
+}
 
-	return vulnerablePre215 || vulnerable215
+func (c *checker) bad() bool {
+	for _, s := range sigs {
+		if s(c) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (c *checker) cves() []cveID {
+	var ids []cveID
+	for id, sig := range sigs {
+		if sig(c) {
+			ids = append(ids, id)
+		}
+	}
+	return ids
 }
 
 const bufSize = 4 << 10 // 4 KiB
