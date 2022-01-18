@@ -1,6 +1,11 @@
 # log4jscanner
 
+[![test](https://github.com/google/log4jscanner/actions/workflows/test.yaml/badge.svg)](https://github.com/google/log4jscanner/actions/workflows/test.yaml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/leozz37/hare)](https://goreportcard.com/report/github.com/leozz37/hare)
 [![Go Reference](https://pkg.go.dev/badge/github.com/google/log4jscanner/jar.svg)](https://pkg.go.dev/github.com/google/log4jscanner/jar)
+![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/google/log4jscanner)
+![GitHub release (latest by date)](https://img.shields.io/github/v/release/google/log4jscanner)
+[![License](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 A log4j vulnerability filesystem scanner and Go package for analyzing JAR files.
 
