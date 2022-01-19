@@ -56,13 +56,16 @@ function build {
 		zip -r "$TARGET" ./
 		cd -
 	else
+		TARGET="${PWD}/bin/log4jscanner-${VERSION}-${GOOS}-${GOARCH}.tar.gz"
 		tar \
 			--group=root \
 			--owner=root \
 			-czvf \
-			"${PWD}/bin/log4jscanner-${VERSION}-${GOOS}-${GOARCH}.tar.gz" \
+			"$TARGET" \
 			-C "$TEMP_DIR" \
-			"./"
+			"./log4jscanner"
+		# Print the contents of the TAR so we can visually debug it during CI.
+		tar -ztvf "$TARGET"
 	fi
 	rm -rf "$TEMP_DIR"
 }
