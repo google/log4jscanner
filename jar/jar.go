@@ -41,6 +41,12 @@ var exts = map[string]bool{
 	".jmod": true,
 }
 
+// Names of class files to parse in detail.
+const (
+	jndiManagerClass = "JndiManager.class"
+	jndiLookupClass  = "JndiLookup.class"
+)
+
 // Parser allows tuning paramters of a vulnerable log4j scan.  The
 // zero value provides reasonable defaults.
 type Parser struct {
@@ -195,6 +201,9 @@ type checker struct {
 	// log4j >=2.0-beta9 which hasn't been patched by removing
 	// JndiLookup.class.
 	hasLookupClass bool
+	// Does JndiLookup have a reference to javax.naming.InitialContext?  This
+	// indicates log4j >=2.0-beta9 and <2.1.
+	hasInitialContext bool
 	// Does the JAR contain JndiManager.class, which indicates log4j >=2.1?
 	hasJndiManagerClass bool
 	// Does the JAR contain JndiManager with a constructor that
@@ -214,11 +223,27 @@ func (c *checker) done() bool {
 }
 
 func (c *checker) bad() bool {
-	// TODO: Figure out how to detect vulnerable log4j versions <2.1.  Both of these conditions
-	// rely on detecting a vulnerable JndiManager class.  Since JndiManager wasn't present until
-	// log4j 2.1 this misses log4j >=2.0-beta9 && <2.1.
-	vulnerablePre215 := c.hasLookupClass && c.hasJndiManagerPre215 && !c.hasIsJndiEnabled
-	vulnerable215 := c.hasLookupClass && c.hasJndiManagerClass && !c.hasIsJndiEnabled
+	// Care must be taken in the formulae below with respect to the
+	// !c.hasIsJndiEnabled clause.  It is satisfied by default until
+	// JndiManager.class is encountered.  To prevent early termination of a
+	// scan with an incorrect result, we have to ensure that we have already
+	// encountered JndiManager.class (e.g. hasJndiManager*) or we have
+	// encountered positive evidence that it will be absent
+	// (i.e. log4j <2.1).
+
+	// CVE-2021-44228 - Initial log4shell vulnerability affecting
+	// Log4j2 2.0-beta9 through 2.12.1 (inclusive, 2.12.2 is not
+	// vulnerable) and 2.13.0 through 2.15.0 (exclusive).
+	vulnerablePre215 := c.hasLookupClass && // unpatched >=2.0-beta9 and
+		(c.hasInitialContext || // <2.1
+			c.hasJndiManagerPre215) && // >=2.1 && <2.15 and
+		!c.hasIsJndiEnabled // <2.16 && !2.12.2
+
+	// CVE-2021-45046 - Log4j2 2.15.0
+	vulnerable215 := c.hasLookupClass && // unpatched >=2.0-beta9 and
+		c.hasJndiManagerClass && // >=2.1 and
+		!c.hasIsJndiEnabled // <2.16 && !2.12.2
+
 	return vulnerablePre215 || vulnerable215
 }
 
@@ -251,6 +276,8 @@ func (c *checker) checkJAR(r *zip.Reader, depth int, size int64, jar string) err
 func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) error {
 	d := fs.FileInfoToDirEntry(zf.FileInfo())
 	p := zf.Name
+	base := path.Base(p)
+
 	if c.done() {
 		if d.IsDir() {
 			return fs.SkipDir
@@ -267,20 +294,26 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 			// need to check more.
 			return nil
 		}
-		if !c.hasLookupClass && strings.Contains(p, "JndiLookup.class") {
-			// JndiLookup.class indicates log4j >=2.0-beta9.  No further checks
-			// are required on this class.
-			c.hasLookupClass = true
-			return nil
+
+		info := zf.FileInfo()
+		if fsize := info.Size(); fsize+size > c.maxBytes() {
+			return fmt.Errorf("reading %s would exceed memory limit", p)
 		}
 
-		// The only other class we may need to check is JndiManager.class, if we
-		// haven't already done so.
-		if !(c.needsJndiManagerCheck() && strings.Contains(p, "JndiManager.class")) {
-			// Nothing to do.
+		// We only need to check JndiLookup and JndiManager classes. Bail before incurring
+		// the cost of opening the file if we aren't going to check it.
+		switch base {
+		case jndiLookupClass:
+			if !c.needsJndiLookupCheck() {
+				return nil
+			}
+		case jndiManagerClass:
+			if !c.needsJndiManagerCheck() {
+				return nil
+			}
+		default:
 			return nil
 		}
-		c.hasJndiManagerClass = true
 
 		f, err := zf.Open()
 		if err != nil {
@@ -288,16 +321,15 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 		}
 		defer f.Close()
 
-		info := zf.FileInfo()
-		if err != nil {
-			return fmt.Errorf("stat file %s: %v", p, err)
-		}
-		if fsize := info.Size(); fsize+size > c.maxBytes() {
-			return fmt.Errorf("reading %s would exceed memory limit: %v", p, err)
-		}
 		buf := bufPool.Get().([]byte)
 		defer bufPool.Put(buf)
-		return c.checkJndiManager(f, buf)
+
+		switch base {
+		case jndiLookupClass:
+			return c.checkJndiLookup(f, buf)
+		case jndiManagerClass:
+			return c.checkJndiManager(f, buf)
+		}
 	}
 	if p == "META-INF/MANIFEST.MF" {
 		mf, err := zf.Open()
@@ -441,9 +473,11 @@ func init() {
 	log4jPattern.Longest()
 }
 
-// checkJndiManager class bytecode for presence of the constructor indicating a vulnerable pre-2.15
-// version or the isJndiEnabled method indicating 2.16+ or 2.12.2.
+// checkJndiManager checks JndiManager class bytecode for presence of the constructor indicating a
+// vulnerable pre-2.15 version or the isJndiEnabled method indicating 2.16+ or 2.12.2.
 func (c *checker) checkJndiManager(r io.Reader, buf []byte) error {
+	c.hasJndiManagerClass = true
+
 	br := newByteReader(r, buf)
 	matches := log4jPattern.FindReaderSubmatchIndex(br)
 
@@ -473,6 +507,36 @@ func (c *checker) checkJndiManager(r io.Reader, buf []byte) error {
 		c.hasIsJndiEnabled = true
 		c.hasJndiManagerPre215 = true
 	}
+	return nil
+}
+
+// needsJndiLookupCheck returns true if there's something that we could learn by checking
+// JndiLookup bytecode with checkJndiLookup.
+func (c *checker) needsJndiLookupCheck() bool {
+	return !c.hasLookupClass || !c.hasInitialContext
+}
+
+// The JndiLookup class in log4j >=2.0-beta9 but <2.1 contains a reference to
+// javax.naming.InitialContext that was removed in the 2.1 release.
+var initialContextPattern = binaryregexp.MustCompile(binaryregexp.QuoteMeta(`javax/naming/InitialContext`))
+
+// checkJndiLookup checks JndiLookup class bytecode for a reference to javax/naming/InitialContext,
+// indicating log4j >=2.0-beta9 but <2.1.
+func (c *checker) checkJndiLookup(r io.Reader, buf []byte) error {
+	c.hasLookupClass = true
+
+	br := newByteReader(r, buf)
+	matches := initialContextPattern.MatchReader(br)
+
+	// Error reading.
+	if err := br.Err(); err != nil && err != io.EOF {
+		return err
+	}
+
+	if matches {
+		c.hasInitialContext = true
+	}
+
 	return nil
 }
 

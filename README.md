@@ -123,10 +123,6 @@ func main() {
 
 See the `examples/` directory for full programs.
 
-## False negatives
-
-This scanner does not yet detect vulnerable log4j versions before log4j 2.1.
-
 ## False positives
 
 False positives have been observed for the scanner. Use caution when rewriting
