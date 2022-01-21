@@ -297,7 +297,7 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 		}
 		buf := bufPool.Get().([]byte)
 		defer bufPool.Put(buf)
-		return c.checkJndiManager(p, f, buf)
+		return c.checkJndiManager(f, buf)
 	}
 	if p == "META-INF/MANIFEST.MF" {
 		mf, err := zf.Open()
@@ -445,7 +445,7 @@ func init() {
 
 // checkJndiManager class bytecode for presence of the constructor indicating a vulnerable pre-2.15
 // version or the isJndiEnabled method indicating 2.16+ or 2.12.2.
-func (c *checker) checkJndiManager(filename string, r io.Reader, buf []byte) error {
+func (c *checker) checkJndiManager(r io.Reader, buf []byte) error {
 	br := newByteReader(r, buf)
 	matches := log4jPattern.FindReaderSubmatchIndex(br)
 
