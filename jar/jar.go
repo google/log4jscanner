@@ -518,6 +518,7 @@ func (c *checker) needsJndiLookupCheck() bool {
 
 // The JndiLookup class in log4j >=2.0-beta9 but <2.1 contains a reference to
 // javax.naming.InitialContext that was removed in the 2.1 release.
+// Relevant commit: https://github.com/apache/logging-log4j2/commit/cc30d6dd629cbf0529ce898d6c25305b2cff9f0e
 var initialContextPattern = binaryregexp.MustCompile(binaryregexp.QuoteMeta(`javax/naming/InitialContext`))
 
 // checkJndiLookup checks JndiLookup class bytecode for a reference to javax/naming/InitialContext,
