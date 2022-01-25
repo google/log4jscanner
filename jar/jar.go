@@ -384,15 +384,14 @@ const (
 	//
 	// strings:
 	// $JndiManagerConstructor = {
-	//     3c 69 6e 69 74 3e ?? ?? ?? 28 4c 6a 61 76 61 2f 6c 61 6e 67 2f 53 74 72 69
+	//     3c 69 6e 69 74 3e 01 00 2b 28 4c 6a 61 76 61 2f 6c 61 6e 67 2f 53 74 72 69
 	//     6e 67 3b 4c 6a 61 76 61 78 2f 6e 61 6d 69 6e 67 2f 43 6f 6e 74 65 78 74 3b
 	//     29 56
 	// }
 	//
 	// https://github.com/darkarnium/Log4j-CVE-Detect/blob/main/rules/vulnerability/log4j/CVE-2021-44228.yar
 
-	log4jYARARulePrefix = "\x3c\x69\x6e\x69\x74\x3e"
-	log4jYARARuleSuffix = "\x28\x4c\x6a\x61\x76\x61\x2f\x6c\x61\x6e\x67\x2f\x53\x74\x72\x69\x6e\x67\x3b\x4c\x6a\x61\x76\x61\x78\x2f\x6e\x61\x6d\x69\x6e\x67\x2f\x43\x6f\x6e\x74\x65\x78\x74\x3b\x29\x56"
+	log4jYARARule = "\x3c\x69\x6e\x69\x74\x3e\x01\x00\x2b\x28\x4c\x6a\x61\x76\x61\x2f\x6c\x61\x6e\x67\x2f\x53\x74\x72\x69\x6e\x67\x3b\x4c\x6a\x61\x76\x61\x78\x2f\x6e\x61\x6d\x69\x6e\x67\x2f\x43\x6f\x6e\x74\x65\x78\x74\x3b\x29\x56"
 
 	// Relevant commit: https://github.com/apache/logging-log4j2/commit/44569090f1cf1e92c711fb96dfd18cd7dccc72ea
 	// In 2.16 the JndiManager class added the method `isJndiEnabled`. This was
@@ -430,8 +429,7 @@ func init() {
 	// By creating submatches for each of these cases, we can identify which
 	// patterns are actually present. Also, in order to ensure (1) and (2)
 	// do not shadow (3) and (4), we need to look for the longest match.
-	yaraRule := binaryregexp.QuoteMeta(log4jYARARulePrefix) +
-		".{0,3}" + binaryregexp.QuoteMeta(log4jYARARuleSuffix)
+	yaraRule := binaryregexp.QuoteMeta(log4jYARARule)
 	log4jPattern = binaryregexp.MustCompile(
 		fmt.Sprintf("(?P<216>%s)|(?P<YARA>%s)|(?P<216First>%s.*%s)|(?P<YARAFirst>%s.*%s)",
 			log4j216Pattern,
