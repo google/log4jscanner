@@ -145,8 +145,6 @@ func main() {
 		},
 	}
 
-	srcFile := "./jar/testdata/arara.jar"
-	dstFile := "./jar/testdata/backup/arara.save.jar"
   
 	for _, dir := range dirs {
 		logf("Scanning %s", dir)
