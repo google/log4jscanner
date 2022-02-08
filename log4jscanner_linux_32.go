@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//go:build linux && !386
+//go:build linux && 386
 
 package main
 
@@ -22,9 +22,8 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-var toIgnore = map[int64]bool{
+var toIgnore = map[int32]bool{
 	unix.CGROUP_SUPER_MAGIC: true,
-	unix.BPF_FS_MAGIC:       true,
 	unix.DEBUGFS_MAGIC:      true,
 	unix.DEVPTS_SUPER_MAGIC: true,
 	unix.PROC_SUPER_MAGIC:   true,
@@ -33,13 +32,11 @@ var toIgnore = map[int64]bool{
 	unix.TRACEFS_MAGIC:      true,
 }
 
-var networkIgnore = map[int64]bool{
+var networkIgnore = map[int32]bool{
 	unix.SMB_SUPER_MAGIC: true,
 	unix.AFS_SUPER_MAGIC: true,
 	unix.NFS_SUPER_MAGIC: true,
 	0x65735546:           true, // Fuse_SUPER_MAGIC
-	0xff534d42:           true, // CIFS_MAGIC_NUMBER
-	0xfe534d42:           true, // SMB2_MAGIC_NUMBER
 }
 
 func ignoreDir(path string, force bool) (bool, error) {
