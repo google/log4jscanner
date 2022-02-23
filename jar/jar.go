@@ -385,12 +385,12 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 	if err != nil {
 		return fmt.Errorf("open file %s: %v", p, err)
 	}
-	data, err := io.ReadAll(f)
+	buf, err := readFull(f, fi)
 	f.Close() // Recycle the flate buffer earlier, we're going to recurse.
 	if err != nil {
 		return fmt.Errorf("read file %s: %v", p, err)
 	}
-	br := bytes.NewReader(data)
+	br := bytes.NewReader(buf)
 	r2, err := zip.NewReader(br, br.Size())
 	if err != nil {
 		if err == zip.ErrFormat {
@@ -403,6 +403,18 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 		return fmt.Errorf("checking sub jar %s: %v", p, err)
 	}
 	return nil
+}
+
+func readFull(r io.Reader, fi os.FileInfo) ([]byte, error) {
+	if !fi.Mode().IsRegular() {
+		return io.ReadAll(r) // If not a regular file, size may not be accurate.
+	}
+	buf := make([]byte, fi.Size())
+	n, err := io.ReadFull(r, buf)
+	if err != nil || n != len(buf) {
+		return nil, err
+	}
+	return buf, nil
 }
 
 // needsJndiManagerCheck returns true if there's something that we could learn by checking
