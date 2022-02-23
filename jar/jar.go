@@ -249,11 +249,18 @@ func (c *checker) bad() bool {
 
 const bufSize = 4 << 10 // 4 KiB
 
-var bufPool = sync.Pool{
-	New: func() interface{} {
-		return make([]byte, bufSize)
-	},
-}
+var (
+	bufPool = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, bufSize)
+		},
+	}
+	dynBufPool = sync.Pool{
+		New: func() interface{} {
+			return make([]byte, bufSize)
+		},
+	}
+)
 
 func (c *checker) checkJAR(r *zip.Reader, depth int, size int64, jar string) error {
 	if depth > c.maxDepth() {
@@ -385,7 +392,9 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 	if err != nil {
 		return fmt.Errorf("open file %s: %v", p, err)
 	}
-	buf, err := readFull(f, fi)
+	buf := dynBufPool.Get().([]byte)
+	buf, err = readFull(f, fi, buf)
+	defer dynBufPool.Put(buf)
 	f.Close() // Recycle the flate buffer earlier, we're going to recurse.
 	if err != nil {
 		return fmt.Errorf("read file %s: %v", p, err)
@@ -405,14 +414,18 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 	return nil
 }
 
-func readFull(r io.Reader, fi os.FileInfo) ([]byte, error) {
+func readFull(r io.Reader, fi os.FileInfo, buf []byte) ([]byte, error) {
 	if !fi.Mode().IsRegular() {
 		return io.ReadAll(r) // If not a regular file, size may not be accurate.
 	}
-	buf := make([]byte, fi.Size())
+	if size := int(fi.Size()); cap(buf) < size {
+		buf = make([]byte, size)
+	} else {
+		buf = buf[:size]
+	}
 	n, err := io.ReadFull(r, buf)
 	if err != nil || n != len(buf) {
-		return nil, err
+		return buf, err
 	}
 	return buf, nil
 }
