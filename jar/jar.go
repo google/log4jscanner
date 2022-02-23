@@ -385,8 +385,8 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 	if err != nil {
 		return fmt.Errorf("open file %s: %v", p, err)
 	}
-	defer f.Close()
 	data, err := io.ReadAll(f)
+	f.Close() // Recycle the flate buffer earlier, we're going to recurse.
 	if err != nil {
 		return fmt.Errorf("read file %s: %v", p, err)
 	}
