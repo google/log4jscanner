@@ -207,39 +207,51 @@ func TestInfiniteRecursion(t *testing.T) {
 }
 
 func BenchmarkParse(b *testing.B) {
-	filename := "safe1.jar"
-	p := testdataPath(filename)
-	zr, _, err := OpenReader(p)
-	if err != nil {
-		b.Fatalf("zip.OpenReader failed: %v", err)
-	}
-	defer zr.Close()
-	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
-		_, err := Parse(&zr.Reader)
-		if err != nil {
-			b.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
-		}
+	for _, filename := range [...]string{
+		"400mb_jar_in_jar.jar",
+		"safe1.jar",
+	} {
+		b.Run(filename, func(b *testing.B) {
+			p := testdataPath(filename)
+			zr, _, err := OpenReader(p)
+			if err != nil {
+				b.Fatalf("zip.OpenReader failed: %v", err)
+			}
+			defer zr.Close()
+			b.ReportAllocs()
+			for i := 0; i < b.N; i++ {
+				_, err := Parse(&zr.Reader)
+				if err != nil {
+					b.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
+				}
+			}
+		})
 	}
 }
 
 func BenchmarkParseParallel(b *testing.B) {
-	filename := "safe1.jar"
-	p := testdataPath(filename)
-	b.ReportAllocs()
-	b.RunParallel(func(pb *testing.PB) {
-		zr, _, err := OpenReader(p)
-		if err != nil {
-			b.Fatalf("zip.OpenReader failed: %v", err)
-		}
-		defer zr.Close()
-		for pb.Next() {
-			_, err := Parse(&zr.Reader)
-			if err != nil {
-				b.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
-			}
-		}
-	})
+	for _, filename := range [...]string{
+		"400mb_jar_in_jar.jar",
+		"safe1.jar",
+	} {
+		b.Run(filename, func(b *testing.B) {
+			p := testdataPath(filename)
+			b.ReportAllocs()
+			b.RunParallel(func(pb *testing.PB) {
+				zr, _, err := OpenReader(p)
+				if err != nil {
+					b.Fatalf("zip.OpenReader failed: %v", err)
+				}
+				defer zr.Close()
+				for pb.Next() {
+					_, err := Parse(&zr.Reader)
+					if err != nil {
+						b.Errorf("Scan() returned an unexpected error, got %v, want nil", err)
+					}
+				}
+			})
+		})
+	}
 }
 
 func TestLog4jPattern(t *testing.T) {
