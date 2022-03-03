@@ -29,6 +29,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/google/log4jscanner/pool"
 	zipfork "github.com/google/log4jscanner/third_party/zip"
 	"rsc.io/binaryregexp"
 )
@@ -255,10 +256,9 @@ var (
 			return make([]byte, bufSize)
 		},
 	}
-	dynBufPool = sync.Pool{
-		New: func() interface{} {
-			return make([]byte, bufSize)
-		},
+	dynBufPool = pool.Dynamic{
+		Pool:       sync.Pool{New: func() interface{} { return make([]byte, 0) }},
+		MinUtility: bufSize,
 	}
 )
 
@@ -394,7 +394,7 @@ func (c *checker) checkFile(zf *zip.File, depth int, size int64, jar string) err
 	}
 	buf := dynBufPool.Get().([]byte)
 	buf, err = readFull(f, fi, buf)
-	defer dynBufPool.Put(buf)
+	defer dynBufPool.Put(buf, float64(len(buf)), float64(cap(buf)))
 	f.Close() // Recycle the flate buffer earlier, we're going to recurse.
 	if err != nil {
 		return fmt.Errorf("read file %s: %v", p, err)
@@ -419,7 +419,11 @@ func readFull(r io.Reader, fi os.FileInfo, buf []byte) ([]byte, error) {
 		return io.ReadAll(r) // If not a regular file, size may not be accurate.
 	}
 	if size := int(fi.Size()); cap(buf) < size {
-		buf = make([]byte, size)
+		capacity := size
+		if capacity < bufSize {
+			capacity = bufSize // Allocating much smaller buffers could lead to quick re-allocations.
+		}
+		buf = make([]byte, size, capacity)
 	} else {
 		buf = buf[:size]
 	}
