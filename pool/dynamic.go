@@ -9,7 +9,6 @@ package pool
 
 import (
 	"math"
-	"sync"
 	"sync/atomic"
 )
 
@@ -19,7 +18,10 @@ import (
 // history of required object sizes (utility) and comparing them to the actual
 // object size (cost) before accepting an object.
 type Dynamic struct {
-	Pool sync.Pool
+	Pool interface {
+		Get() interface{}
+		Put(interface{})
+	}
 
 	// The utility below which the cost of creating the object is more expensive
 	// than just keeping it. Set this to the expected object size (or perhaps a
