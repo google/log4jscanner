@@ -257,7 +257,7 @@ var (
 		},
 	}
 	dynBufPool = pool.Dynamic{
-		Pool:       sync.Pool{New: func() interface{} { return make([]byte, 0) }},
+		Pool:       &sync.Pool{New: func() interface{} { return make([]byte, 0) }},
 		MinUtility: bufSize,
 	}
 )

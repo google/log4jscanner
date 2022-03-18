@@ -2,12 +2,32 @@ package pool
 
 import (
 	"math"
-	"sync"
 	"sync/atomic"
 	"testing"
 )
 
 const bufSize = 4096
+
+// A simplePool is like a sync.Pool, but more determistic for tests. Properties:
+//
+//   - Can not be used concurrently.
+//   - Can not have crossed Get/Put calls.
+type simplePool struct {
+	New func() interface{}
+
+	val interface{}
+}
+
+func (s *simplePool) Get() interface{} {
+	if s.val == nil {
+		return s.New()
+	}
+	return s.val
+}
+
+func (s *simplePool) Put(val interface{}) {
+	s.val = val
+}
 
 // The desired behaviour of the dynamic (buffer) pool is:
 //   - Don't retain (very) large items indefinitely (check that one is rejected
@@ -16,7 +36,7 @@ const bufSize = 4096
 //     amortized.
 func TestDynamic(t *testing.T) {
 	dp := Dynamic{
-		Pool:       sync.Pool{New: func() interface{} { return make([]byte, 0) }},
+		Pool:       &simplePool{New: func() interface{} { return make([]byte, 0) }},
 		MinUtility: bufSize,
 	}
 	var allocs int
@@ -43,10 +63,6 @@ func TestDynamic(t *testing.T) {
 	var largeBufferPurged int
 
 	t.Logf("num allocs value target capacity")
-	// This test assumes (with some margin for error) that back-to-back Put/Get
-	// on a pool from a single goroutine yield the same item. I believe this to
-	// be a fairly stable assumption avoiding plenty of testing boilerplate,
-	// time will tell.
 	for idx, size := range sizes {
 		buf := dp.Get().([]byte)
 		if cap(buf) < size {
