@@ -62,12 +62,20 @@ type Walker struct {
 	HandleReport func(path string, r *Report)
 	// HandleRewrite is called when a JAR is rewritten successfully.
 	HandleRewrite func(path string, r *Report)
+	// Parser will be used when checking JARs, if provided. If
+	// unset, a Parser with sensible defaults will be created.
+	Parser *Parser
 }
 
 // Walk attempts to scan a directory for vulnerable JARs.
 func (w *Walker) Walk(dir string) error {
+	p := w.Parser
+	if p == nil {
+		p = &Parser{}
+	}
+
 	fsys := os.DirFS(dir)
-	wk := walker{w, fsys, dir}
+	wk := walker{w, fsys, dir, p}
 
 	return fs.WalkDir(fsys, ".", func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
@@ -88,6 +96,8 @@ type walker struct {
 	*Walker
 	fs  fs.FS
 	dir string
+	// p is the Parser to use for this walk. p is guaranteed to be non-nil.
+	p *Parser
 }
 
 func (w *walker) filepath(path string) string {
@@ -154,7 +164,7 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 	if !IsJAR(zr) {
 		return nil
 	}
-	r, err := Parse(zr)
+	r, err := w.p.Parse(zr)
 	if err != nil {
 		return fmt.Errorf("scanning jar: %v", err)
 	}
