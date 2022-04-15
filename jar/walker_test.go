@@ -16,6 +16,7 @@ package jar
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -175,5 +176,61 @@ func TestWalkerRewrite(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("walking filesystem after rewrite returned diff (-want, +got): %s", diff)
+	}
+}
+
+// TestNonDefaultParser verifies that Walker can be configured with a
+// non-default Parser by scanning a large JAR file with two
+// configurations: one where Parser.MaxBytes is larger than the file
+// size and one where Parser.MaxBytes is smaller than the file
+// size. It ensures that the first case succeeds and the second fails.
+func TestNonDefaultParser(t *testing.T) {
+	jar := "400mb_jar_in_jar.jar"
+
+	tempDir := t.TempDir()
+	src := testdataPath(jar)
+	dest := filepath.Join(tempDir, jar)
+	cpFile(t, dest, src)
+
+	tests := []struct {
+		desc     string
+		maxBytes int64
+		wantErr  bool
+	}{
+		{
+			desc:     "MaxBytes > JAR size",
+			maxBytes: 4 << 30, // 4GiB
+			wantErr:  false,
+		},
+		{
+			desc:     "MaxBytes < JAR size",
+			maxBytes: 4 << 20, // 4MiB
+			wantErr:  true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.desc, func(t *testing.T) {
+			var gotErr error
+
+			p := &Parser{MaxBytes: tc.maxBytes}
+			w := &Walker{
+				Parser: p,
+				HandleError: func(path string, err error) {
+					if err != nil && strings.HasSuffix(path, filepath.FromSlash("/"+jar)) {
+						gotErr = err
+					}
+				},
+			}
+			if err := w.Walk(tempDir); err != nil {
+				t.Errorf("Walk returned unexpected error: %v", err)
+			}
+
+			if tc.wantErr && gotErr == nil {
+				t.Error("Parser failed to generate expected error when scanning JARs > MaxBytes, got nil, want error")
+			} else if !tc.wantErr && gotErr != nil {
+				t.Errorf("Parser generated unexpected error when scanning JARs <= MaxBytes, got %v, want nil error", gotErr)
+			}
+		})
 	}
 }
