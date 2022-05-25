@@ -211,15 +211,14 @@ func (o offsetReader) ReadAt(p []byte, off int64) (n int, err error) {
 // - https://kevinboone.me/execjava.html
 // - https://github.com/golang/go/issues/10464
 func NewReader(ra io.ReaderAt, size int64) (zr *zip.Reader, offset int64, err error) {
-	zr, err = zip.NewReader(ra, size)
-	if err == nil || !errors.Is(err, zip.ErrFormat) {
-		return zr, 0, err
-	}
 	offset, err = zipfork.ReadZIPOffset(ra, size)
 	if err != nil {
 		return nil, 0, err
 	}
-	zr, err = zip.NewReader(offsetReader{ra, offset}, size-offset)
+	if offset > 0 {
+		ra = offsetReader{ra, offset}
+	}
+	zr, err = zip.NewReader(ra, size)
 	return zr, offset, err
 }
 
