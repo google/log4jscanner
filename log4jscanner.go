@@ -40,6 +40,7 @@ Flags:
     -f, --force    Don't skip network and userland filesystems. (smb,nfs,afs,fuse)
     -w, --rewrite  Rewrite vulnerable JARs as they are detected.
     -v, --verbose  Print verbose logs to stderr.
+    -b, --backup   Suffix to use to backup a file when rewriting (.bak)
 
 `)
 }
@@ -74,8 +75,10 @@ func main() {
 	flag.BoolVar(&w, "w", false, "")
 	flag.BoolVar(&verbose, "verbose", false, "")
 	flag.BoolVar(&v, "v", false, "")
+  
 	flag.BoolVar(&force, "force", false, "")
 	flag.BoolVar(&f, "f", false, "")
+
 	flag.Func("s", "", appendSkip)
 	flag.Func("skip", "", appendSkip)
 	flag.Usage = usage
@@ -94,10 +97,12 @@ func main() {
 	if w {
 		rewrite = w
 	}
+
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logf := func(format string, v ...interface{}) {
 		if verbose {
 			log.Printf(format, v...)
+
 		}
 	}
 	seen := 0
@@ -140,6 +145,7 @@ func main() {
 		},
 	}
 
+  
 	for _, dir := range dirs {
 		logf("Scanning %s", dir)
 		if err := walker.Walk(dir); err != nil {
