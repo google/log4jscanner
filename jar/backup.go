@@ -18,32 +18,36 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
-func BackupFiles(jar string) {
-	pathdst := filepath.Join(".", "backup")
-	if _, err := os.Stat(pathdst); os.IsNotExist(err) {
-		err := os.Mkdir(pathdst, os.ModePerm)
+// backupFile makes copies JARs file in the backup folder
+func backupFile(jarPath string, jarSource string, jarFile string) error {
+	pathdst := filepath.Join(jarPath, "backup")
+
+	err := makeDirIfNotExist(pathdst)
+	if err != nil {
+		return err
+	}
+
+	jarDst := pathdst + "/" + jarFile + ".bak"
+
+	_, err = copyJars(jarSource, jarDst)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// makeDirIfNotExist make folder to copies file from
+// directory to scan
+func makeDirIfNotExist(src string) error {
+	if _, err := os.Stat(src); os.IsNotExist(err) {
+		err := os.Mkdir(src, os.ModePerm)
 		if err != nil {
-			fmt.Errorf("create backup %v", err)
+			return fmt.Errorf("creating backup directory: %v", err)
 		}
 	}
-
-	jarSplit := strings.Split(jar, "/")
-
-	if len(jarSplit) == 3 {
-		pathdst = pathdst + "/" + jarSplit[2] + ".bak"
-	}
-
-	if len(jarSplit) == 4 {
-		pathdst = pathdst + "/" + jarSplit[3] + ".bak"
-	}
-
-	_, err := copyJars(jar, pathdst)
-	if err != nil {
-		fmt.Errorf("copy file %v ", err)
-	}
+	return nil
 }
 
 func copyJars(src, dst string) (int64, error) {
@@ -53,7 +57,7 @@ func copyJars(src, dst string) (int64, error) {
 	}
 
 	if !sourceFileStat.Mode().IsRegular() {
-		return 0, fmt.Errorf("%s is not a regular file", src)
+		return 0, fmt.Errorf("%s is not a regular file:", src)
 	}
 
 	source, err := os.Open(src)
