@@ -56,8 +56,8 @@ func copyJars(src, dst string) (int64, error) {
 		return 0, err
 	}
 
-	if !sourceFileStat.Mode().IsRegular() {
-		return 0, fmt.Errorf("%s is not a regular file:", src)
+	if m := sourceFileStat.Mode(); !m.IsRegular() {
+		return 0, fmt.Errorf("%s is not a regular file: %s", src, m)
 	}
 
 	source, err := os.Open(src)
