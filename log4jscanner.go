@@ -40,6 +40,7 @@ Flags:
     -f, --force    Don't skip network and userland filesystems. (smb,nfs,afs,fuse)
     -w, --rewrite  Rewrite vulnerable JARs as they are detected.
     -v, --verbose  Print verbose logs to stderr.
+    -b, --backup   Make a backup of the scanned files
 
 `)
 }
@@ -49,8 +50,8 @@ var skipDirs = map[string]bool{
 	".git":         true,
 	"node_modules": true,
 	".idea":        true,
-	".svn":			true,
-	".p4root":		true,
+	".svn":         true,
+	".p4root":      true,
 
 	// TODO(ericchiang): expand
 }
@@ -63,6 +64,8 @@ func main() {
 		v       bool
 		force   bool
 		f       bool
+		backup  bool
+		b       bool
 		toSkip  []string
 	)
 	appendSkip := func(dir string) error {
@@ -76,6 +79,8 @@ func main() {
 	flag.BoolVar(&v, "v", false, "")
 	flag.BoolVar(&force, "force", false, "")
 	flag.BoolVar(&f, "f", false, "")
+	flag.BoolVar(&b, "b", false, "")
+	flag.BoolVar(&backup, "backup", false, "")
 	flag.Func("s", "", appendSkip)
 	flag.Func("skip", "", appendSkip)
 	flag.Usage = usage
@@ -94,6 +99,9 @@ func main() {
 	if w {
 		rewrite = w
 	}
+	if b {
+		backup = b
+	}
 	log.SetFlags(log.LstdFlags | log.Lshortfile)
 	logf := func(format string, v ...interface{}) {
 		if verbose {
@@ -103,6 +111,7 @@ func main() {
 	seen := 0
 	walker := jar.Walker{
 		Rewrite: rewrite,
+		Backup:  backup,
 		SkipDir: func(path string, d fs.DirEntry) bool {
 			seen++
 			if seen%5000 == 0 {

@@ -51,6 +51,8 @@ type Walker struct {
 	// Rewrite indicates if the Walker should rewrite JARs in place as it
 	// iterates through the filesystem.
 	Rewrite bool
+	// Backup indicates if the Walker should create a backups from JARs.
+	Backup bool
 	// SkipDir, if provided, allows the walker to skip certain directories
 	// as it scans.
 	SkipDir func(path string, de fs.DirEntry) bool
@@ -133,6 +135,7 @@ func (w *walker) skipDir(path string, d fs.DirEntry) bool {
 }
 
 func (w *walker) visit(p string, d fs.DirEntry) error {
+
 	if d.IsDir() || !d.Type().IsRegular() {
 		return nil
 	}
@@ -178,6 +181,13 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 		return nil
 	}
 
+	if w.Backup {
+		err := backupFile(w.dir, w.filepath(p), p)
+		if err != nil {
+			return fmt.Errorf("backup: %v", err)
+		}
+	}
+
 	dest := w.filepath(p)
 	// Ensure temp file is created in the same directory as the file we want to
 	// rewrite to improve the chances of ending up on the same filesystem. On
@@ -215,5 +225,6 @@ func (w *walker) visit(p string, d fs.DirEntry) error {
 		return fmt.Errorf("overwriting %s: %v", p, err)
 	}
 	w.handleRewrite(p, r)
+
 	return nil
 }
