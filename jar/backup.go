@@ -23,7 +23,6 @@ import (
 // backupFile makes copies JARs file in the backup folder
 func backupFile(jarPath, jarSource, jarFile string) error {
 	pathdst := filepath.Join(jarPath, jarFile+".bak")
-
 	_, err := copyJars(jarSource, pathdst)
 	if err != nil {
 		return err
