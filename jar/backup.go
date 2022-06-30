@@ -17,35 +17,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 )
 
 // backupFile makes copies JARs file in the backup folder
 func backupFile(jarPath string, jarSource string, jarFile string) error {
-	pathdst := filepath.Join(jarPath, "backup")
+	pathdst := jarPath + "/" + jarFile + ".bak"
 
-	err := makeDirIfNotExist(pathdst)
+	_, err := copyJars(jarSource, pathdst)
 	if err != nil {
 		return err
-	}
-
-	jarDst := pathdst + "/" + jarFile + ".bak"
-
-	_, err = copyJars(jarSource, jarDst)
-	if err != nil {
-		return err
-	}
-	return nil
-}
-
-// makeDirIfNotExist make folder to copies file from
-// directory to scan
-func makeDirIfNotExist(src string) error {
-	if _, err := os.Stat(src); os.IsNotExist(err) {
-		err := os.Mkdir(src, os.ModePerm)
-		if err != nil {
-			return fmt.Errorf("creating backup directory: %v", err)
-		}
 	}
 	return nil
 }
