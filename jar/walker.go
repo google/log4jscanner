@@ -51,7 +51,7 @@ type Walker struct {
 	// Rewrite indicates if the Walker should rewrite JARs in place as it
 	// iterates through the filesystem.
 	Rewrite bool
-	// Backup indicates if the Walker should create a backups from JARs
+	// Backup indicates if the Walker should create a backups from JARs.
 	Backup bool
 	// SkipDir, if provided, allows the walker to skip certain directories
 	// as it scans.
